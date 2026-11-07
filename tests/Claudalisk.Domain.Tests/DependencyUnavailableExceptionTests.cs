@@ -36,12 +36,18 @@ public sealed class DependencyUnavailableExceptionTests
         Assert.Same(cause, new DependencyUnavailableException("The carrier API is down.", cause).InnerException);
     }
 
-    [Theory]
-    [InlineData(0)]
-    [InlineData(-1)]
-    public void AWaitThatIsNotPositiveIsRefused(int seconds)
+    [Fact]
+    public void AZeroWaitIsKept()
+    {
+        var exception = new DependencyUnavailableException("The carrier API is down.", TimeSpan.Zero);
+
+        Assert.Equal(TimeSpan.Zero, exception.RetryAfter);
+    }
+
+    [Fact]
+    public void ANegativeWaitIsRefused()
     {
         Assert.Throws<ArgumentOutOfRangeException>(
-            () => new DependencyUnavailableException("The carrier API is down.", TimeSpan.FromSeconds(seconds)));
+            () => new DependencyUnavailableException("The carrier API is down.", TimeSpan.FromSeconds(-1)));
     }
 }

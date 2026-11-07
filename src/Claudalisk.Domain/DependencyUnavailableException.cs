@@ -20,9 +20,9 @@ public sealed class DependencyUnavailableException : Exception
     public DependencyUnavailableException(string message, TimeSpan? retryAfter, Exception? innerException = null)
         : base(message, innerException)
     {
-        if (retryAfter is { } wait && wait <= TimeSpan.Zero)
+        if (retryAfter is { } wait && wait < TimeSpan.Zero)
         {
-            throw new ArgumentOutOfRangeException(nameof(retryAfter), retryAfter, "The wait before a retry must be positive.");
+            throw new ArgumentOutOfRangeException(nameof(retryAfter), retryAfter, "The wait before a retry cannot be negative.");
         }
 
         RetryAfter = retryAfter;

@@ -86,6 +86,8 @@ public sealed class DomainExceptionTests
     [InlineData("status")]
     [InlineData("detail")]
     [InlineData("instance")]
+    [InlineData("errors")]
+    [InlineData("traceId")]
     [InlineData("Title")]
     public void AnExtensionMemberCannotReplaceAProblemDetailsMember(string name)
     {
@@ -94,6 +96,16 @@ public sealed class DomainExceptionTests
             "The order has already shipped.",
             DomainErrorKind.Conflict,
             new Dictionary<string, object?> { [name] = "x" }));
+    }
+
+    [Fact]
+    public void ExtensionMembersWhoseNamesDifferOnlyInCaseAreRefused()
+    {
+        Assert.Throws<ArgumentException>(() => new TestDomainException(
+            "not-enough-stock",
+            "Not enough items are in stock.",
+            DomainErrorKind.Conflict,
+            new Dictionary<string, object?> { ["available"] = 3, ["Available"] = 4 }));
     }
 
     [Theory]

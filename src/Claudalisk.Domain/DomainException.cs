@@ -5,7 +5,7 @@ namespace Claudalisk.Domain;
 
 public abstract partial class DomainException : Exception
 {
-    private static readonly string[] ProblemDetailsMembers = ["type", "title", "status", "detail", "instance"];
+    private static readonly string[] ProblemDetailsMembers = ["type", "title", "status", "detail", "instance", "errors", "traceId"];
 
     private static readonly IReadOnlyDictionary<string, object?> NoExtensions =
         ReadOnlyDictionary<string, object?>.Empty;
@@ -52,7 +52,7 @@ public abstract partial class DomainException : Exception
             return NoExtensions;
         }
 
-        var copy = new Dictionary<string, object?>(StringComparer.Ordinal);
+        var copy = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
         foreach (var (name, value) in extensions)
         {
             if (string.IsNullOrWhiteSpace(name))
@@ -65,7 +65,10 @@ public abstract partial class DomainException : Exception
                 throw new ArgumentException($"The extension member '{name}' would replace a Problem Details member.", nameof(extensions));
             }
 
-            copy.Add(name, value);
+            if (!copy.TryAdd(name, value))
+            {
+                throw new ArgumentException($"The extension member '{name}' is given twice, ignoring case.", nameof(extensions));
+            }
         }
 
         return copy.AsReadOnly();
