@@ -132,6 +132,24 @@ public sealed class PersistenceSetupTests
     }
 
     [Fact]
+    public async Task APooledModuleContextFailsOnItsFirstRawSqlCommandWhenTheServiceProviderIsCached()
+    {
+        var connectionString = await PostgresServer.CreateMigratedDatabaseAsync();
+        BuildPlainBillingContextModel(connectionString);
+        var services = new ServiceCollection()
+            .AddPersistence(connectionString)
+            .AddDbContextPool<BillingDbContext>((provider, options) => options.UseModuleSchema(provider, BillingDbContext.Schema));
+        await using var app = services.BuildServiceProvider();
+        await using var scope = app.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => db.Database.ExecuteSqlRawAsync("DELETE FROM billing.charges", TestContext.Current.CancellationToken));
+
+        Assert.Contains("AddDbContextPool", error.Message);
+    }
+
+    [Fact]
     public async Task WithoutDockerTheTestsFailAndSayDockerIsNeeded()
     {
         var unreachable = new InvalidOperationException("Docker is either not running or misconfigured.");

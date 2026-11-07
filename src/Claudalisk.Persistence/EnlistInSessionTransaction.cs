@@ -52,7 +52,7 @@ internal sealed class EnlistInSessionTransaction(DbSession session) : SaveChange
         }
 
         ModuleContextGuard.Check(context.GetService<IDbContextOptions>());
-        var current =context.Database.CurrentTransaction?.GetDbTransaction();
+        var current = context.Database.CurrentTransaction?.GetDbTransaction();
         if (session.Transaction is null)
         {
             if (current is NpgsqlTransaction finished && session.FinishedTransactions.Contains(finished))
