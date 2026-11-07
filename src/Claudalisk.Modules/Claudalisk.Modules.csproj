@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>Claudalisk.Modules</PackageId>
+    <Description>Idempotent module registration with declared dependencies for modular monoliths.</Description>
+    <PackageTags>claudalisk;modules;modular-monolith;aspnetcore</PackageTags>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <InternalsVisibleTo Include="Claudalisk.Modules.Tests" />
+  </ItemGroup>
+</Project>
