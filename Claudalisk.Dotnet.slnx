@@ -6,6 +6,7 @@
     <File Path="global.json" />
   </Folder>
   <Folder Name="/src/">
+    <Project Path="src/Claudalisk.AspNetCore/Claudalisk.AspNetCore.csproj" />
     <Project Path="src/Claudalisk.Dispatching/Claudalisk.Dispatching.csproj" />
     <Project Path="src/Claudalisk.Dispatching.Abstractions/Claudalisk.Dispatching.Abstractions.csproj" />
     <Project Path="src/Claudalisk.Domain/Claudalisk.Domain.csproj" />
@@ -14,6 +15,7 @@
     <Project Path="src/Claudalisk.Persistence.Abstractions/Claudalisk.Persistence.Abstractions.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Claudalisk.AspNetCore.Tests/Claudalisk.AspNetCore.Tests.csproj" />
     <Project Path="tests/Claudalisk.Ci.Tests/Claudalisk.Ci.Tests.csproj" />
     <Project Path="tests/Claudalisk.Dispatching.Tests/Claudalisk.Dispatching.Tests.csproj" />
     <Project Path="tests/Claudalisk.Domain.Tests/Claudalisk.Domain.Tests.csproj" />
