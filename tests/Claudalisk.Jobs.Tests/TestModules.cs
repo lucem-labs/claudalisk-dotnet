@@ -46,6 +46,8 @@ internal sealed record ScoreOrdersCommand(Guid Id, bool CrashOnWrite, bool Chang
 
 internal sealed record ScoreCheckpoint(long Orders, bool ComputedInATransaction);
 
+internal sealed record RebuildRefundsCommand(Guid Id);
+
 internal sealed class OrderRow
 {
     public Guid Id { get; set; }
@@ -298,6 +300,19 @@ internal sealed class RefundOnOrderCanceledHandler(BillingDbContext db) : IEvent
     }
 }
 
+internal sealed class RebuildRefundsHandler(BillingDbContext db) : IRebuildJobHandler<RebuildRefundsCommand, OrderCanceled>
+{
+    public async Task<Func<OrderCanceled, bool>> RebuildAsync(RebuildRefundsCommand command, CancellationToken cancellationToken)
+    {
+        var canceled = await db.Database.SqlQueryRaw<Guid>("SELECT id AS \"Value\" FROM orders.orders WHERE canceled").ToListAsync(cancellationToken);
+        await db.Refunds.ExecuteDeleteAsync(cancellationToken);
+        db.Refunds.AddRange(canceled.Select(orderId => new RefundRow { Id = Guid.NewGuid(), OrderId = orderId }));
+        await db.SaveChangesAsync(cancellationToken);
+        var included = canceled.ToHashSet();
+        return delivery => included.Contains(delivery.OrderId);
+    }
+}
+
 internal sealed class MailOnOrderCanceledHandler : IEventHandler<OrderCanceled>
 {
     public Task HandleAsync(OrderCanceled integrationEvent, CancellationToken cancellationToken) =>
@@ -335,7 +350,10 @@ public sealed class BillingModule : IModule
     public void ConfigureServices(IServiceCollection services, IConfiguration configuration)
     {
         services.AddModuleDbContext<BillingDbContext>("billing");
-        services.AddModuleJobs("Billing", "billing", jobs => jobs.Subscribe<OrderCanceled, RefundOnOrderCanceledHandler>("refund-on-order-canceled"));
+        services.AddModuleJobs("Billing", "billing", jobs => jobs
+            .Lane("refunds", 1)
+            .Subscribe<OrderCanceled, RefundOnOrderCanceledHandler>("refund-on-order-canceled", "refunds")
+            .Rebuild<RebuildRefundsCommand, OrderCanceled, RebuildRefundsHandler>("rebuild-refunds"));
     }
 }
 

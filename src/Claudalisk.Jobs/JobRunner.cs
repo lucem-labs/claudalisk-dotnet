@@ -13,6 +13,7 @@ namespace Claudalisk.Jobs;
 public sealed partial class JobRunner
 {
     private static readonly MethodInfo BatchMethod = typeof(JobRunner).GetMethod(nameof(RunBatchesAsync), BindingFlags.NonPublic | BindingFlags.Static)!;
+    private static readonly MethodInfo RebuildMethod = typeof(JobRunner).GetMethod(nameof(RebuildAsync), BindingFlags.NonPublic | BindingFlags.Static)!;
     private static readonly MethodInfo EventMethod = typeof(JobRunner).GetMethod(nameof(HandleEventAsync), BindingFlags.NonPublic | BindingFlags.Static)!;
 
     private readonly IServiceScopeFactory _scopes;
@@ -86,6 +87,10 @@ public sealed partial class JobRunner
                 case JobKindType.Batch:
                     await (Task)BatchMethod.MakeGenericMethod(kind.PayloadType, kind.CheckpointType!)
                         .Invoke(null, [scope.ServiceProvider, kind, context, payload, claimed.Checkpoint, cancel.Token])!;
+                    break;
+                case JobKindType.Rebuild:
+                    await (Task)RebuildMethod.MakeGenericMethod(kind.PayloadType, module.Kinds[kind.EventKind!].PayloadType)
+                        .Invoke(null, [scope.ServiceProvider, kind, context, payload, cancel.Token])!;
                     break;
                 default:
                     await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().RunAsync(async token =>
@@ -184,6 +189,27 @@ public sealed partial class JobRunner
 
             return next;
         }
+    }
+
+    private static async Task RebuildAsync<TCommand, TEvent>(
+        IServiceProvider scope, JobKind kind, JobContext context, object payload, CancellationToken cancellationToken)
+        where TCommand : notnull
+    {
+        var handler = (IRebuildJobHandler<TCommand, TEvent>)scope.GetRequiredService(kind.HandlerType!);
+        var writer = scope.GetRequiredService<IJobWriter>();
+        var publisher = scope.GetRequiredService<EventPublisher>();
+        await scope.GetRequiredService<IUnitOfWork>().RunAsync(async token =>
+        {
+            var includes = await handler.RebuildAsync((TCommand)payload, token);
+            var deliveries = await writer.LockActiveAsync(context.JobsModule, kind.EventKind!, token);
+            var included = deliveries
+                .Where(delivery => includes(JsonSerializer.Deserialize<TEvent>(delivery.Payload, JobQueue.Json)!))
+                .Select(delivery => delivery.Id)
+                .ToArray();
+            await writer.MarkSucceededAsync(context.JobsModule, included, token);
+            await publisher.PublishTrackedAsync(token);
+            await writer.CompleteAsync(context.JobsModule, context.JobId, context.ResultLink, token);
+        }, cancellationToken);
     }
 
     private static Task HandleEventAsync<TEvent>(object handler, object payload, CancellationToken cancellationToken) =>

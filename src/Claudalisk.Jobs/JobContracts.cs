@@ -45,6 +45,8 @@ public sealed record BatchStep<TCheckpoint>(TCheckpoint Checkpoint, bool Done, d
 
 public sealed record JobRun(JobRecord Job, string Payload);
 
+public sealed record JobDelivery(Guid Id, string Payload);
+
 public sealed record JobHistoryQuery(string? Kind = null, IReadOnlyCollection<JobStatus>? Statuses = null, int Page = 1, int PageSize = 50);
 
 public sealed record JobHistoryPage(IReadOnlyList<JobRun> Runs, int Total);
@@ -73,6 +75,11 @@ public interface IBatchJobHandler<in TCommand, TCheckpoint>
     Task<BatchStep<TCheckpoint>> RunBatchAsync(TCommand command, TCheckpoint? checkpoint, CancellationToken cancellationToken);
 
     bool WritesNothing(TCommand command, TCheckpoint? checkpoint) => false;
+}
+
+public interface IRebuildJobHandler<in TCommand, TEvent>
+{
+    Task<Func<TEvent, bool>> RebuildAsync(TCommand command, CancellationToken cancellationToken);
 }
 
 public interface IEventHandler<in TEvent>
@@ -133,4 +140,8 @@ public interface IJobWriter
     Task SaveCheckpointAsync(JobsModule module, Guid id, string checkpoint, double? progress, CancellationToken cancellationToken);
 
     Task<bool> DeleteFinishedAsync(JobsModule module, Guid id, CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<JobDelivery>> LockActiveAsync(JobsModule module, string kind, CancellationToken cancellationToken);
+
+    Task MarkSucceededAsync(JobsModule module, IReadOnlyCollection<Guid> ids, CancellationToken cancellationToken);
 }

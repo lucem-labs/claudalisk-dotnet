@@ -48,6 +48,36 @@ public sealed class JobHistoryTests
     }
 
     [Fact]
+    public async Task DeletingARunJoinsTheModulesUnitOfWorkAndRollsBackWithIt()
+    {
+        await using var app = await PostgresServer.CreateAppAsync();
+        var finished = await EnqueueAsync(app, new FlakyCommand(0));
+        await Runner(app).RunUntilIdleAsync("Orders", cancellationToken: TestContext.Current.CancellationToken);
+
+        await using (var scope = app.CreateAsyncScope())
+        {
+            await Assert.ThrowsAsync<TimeoutException>(() => scope.ServiceProvider.GetRequiredService<IUnitOfWork>().RunAsync(async token =>
+            {
+                Assert.True(await scope.ServiceProvider.GetRequiredService<IJobHistory>().DeleteFinishedAsync("Orders", finished.Id, token));
+                throw new TimeoutException("The module's command failed after it deleted the run.");
+            }, TestContext.Current.CancellationToken));
+        }
+
+        Assert.NotNull(await JobAsync(app, "Orders", finished.Id));
+    }
+
+    [Theory]
+    [InlineData(0, 10)]
+    [InlineData(1, 0)]
+    [InlineData(1, 501)]
+    public async Task AHistoryPageOutsideItsBoundsIsRefused(int page, int pageSize)
+    {
+        await using var app = await PostgresServer.CreateAppAsync();
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => ListAsync(app, new JobHistoryQuery(Page: page, PageSize: pageSize)));
+    }
+
+    [Fact]
     public async Task PruningDeletesOnlyFinishedRunsOlderThanTheModulesRetention()
     {
         await using var app = await PostgresServer.CreateAppAsync();
@@ -73,7 +103,7 @@ public sealed class JobHistoryTests
         var orderId = Guid.NewGuid();
         await SendAsync<Claudalisk.Dispatching.JobReference>(app, new PlaceOrderCommand(orderId, $"order-{orderId:N}", FailAfterQueueing: false));
         await SendAsync<Guid>(app, new CancelOrderCommand(orderId, FailAfterCancel: false));
-        await Runner(app).RunUntilIdleAsync("Billing", cancellationToken: TestContext.Current.CancellationToken);
+        await Runner(app).RunUntilIdleAsync("Billing", "refunds", TestContext.Current.CancellationToken);
         var refund = Assert.Single((await app.GetRequiredService<IJobTransport>().ListAsync(Registry(app).Find("Billing")!, new JobHistoryQuery(), TestContext.Current.CancellationToken)).Runs);
 
         await FinishedAgoAsync(app, "billing", refund.Job.Id, days: 29);
@@ -90,6 +120,16 @@ public sealed class JobHistoryTests
         var services = new ServiceCollection();
 
         Assert.Throws<ArgumentOutOfRangeException>(() => services.AddModuleJobs("Orders", "orders", jobs => jobs.Retention(TimeSpan.Zero)));
+    }
+
+    [Fact]
+    public void AJobsOptionIntervalThatIsNotPositiveFailsWhenTheRunnerStarts()
+    {
+        using var app = new ServiceCollection()
+            .AddTestApp("Host=localhost;Database=unused", options => options.CancelCheckInterval = TimeSpan.Zero)
+            .BuildServiceProvider();
+
+        Assert.Throws<Microsoft.Extensions.Options.OptionsValidationException>(() => app.GetRequiredService<JobRunner>());
     }
 
     private static async Task<JobHistoryPage> ListAsync(IServiceProvider app, JobHistoryQuery query)

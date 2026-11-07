@@ -405,7 +405,7 @@ public sealed class JobsTests
         Assert.Equal(1, await CountAsync(app, "billing.jobs"));
         Assert.Equal(1, await CountAsync(app, "mail.jobs"));
         Assert.Equal(5, await Runner(app).RunUntilIdleAsync("Mail", cancellationToken: TestContext.Current.CancellationToken));
-        Assert.Equal(1, await Runner(app).RunUntilIdleAsync("Billing", cancellationToken: TestContext.Current.CancellationToken));
+        Assert.Equal(1, await Runner(app).RunUntilIdleAsync("Billing", "refunds", TestContext.Current.CancellationToken));
         Assert.Equal(1, await CountAsync(app, $"billing.refunds WHERE order_id = '{orderId}'"));
         Assert.Equal(1, await CountAsync(app, "billing.jobs WHERE status = 'succeeded'"));
         Assert.Equal(1, await CountAsync(app, "mail.jobs WHERE status = 'failed' AND attempts = 5"));
