@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <PackageId>Claudalisk.Jobs</PackageId>
+    <Description>Queued work as jobs: queueing in the unit of work, workers with retries, heartbeats, cancel and progress, batch jobs, event fan-out and the jobs router.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Claudalisk.Jobs.Tests" />
+    <InternalsVisibleTo Include="Claudalisk.Jobs.PostgreSql" />
+    <ProjectReference Include="..\Claudalisk.AspNetCore\Claudalisk.AspNetCore.csproj" />
+    <ProjectReference Include="..\Claudalisk.Dispatching\Claudalisk.Dispatching.csproj" />
+    <ProjectReference Include="..\Claudalisk.Domain\Claudalisk.Domain.csproj" />
+    <ProjectReference Include="..\Claudalisk.Modules\Claudalisk.Modules.csproj" />
+    <ProjectReference Include="..\Claudalisk.Persistence.Abstractions\Claudalisk.Persistence.Abstractions.csproj" />
+  </ItemGroup>
+</Project>
