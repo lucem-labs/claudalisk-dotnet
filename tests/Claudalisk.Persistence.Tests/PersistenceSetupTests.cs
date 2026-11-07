@@ -64,7 +64,9 @@ public sealed class PersistenceSetupTests
     {
         var services = new ServiceCollection()
             .AddPersistence("Host=localhost;Database=unused")
-            .AddDbContextPool<BillingDbContext>((provider, options) => options.UseModuleSchema(provider, BillingDbContext.Schema));
+            .AddDbContextPool<BillingDbContext>((provider, options) => options
+                .UseModuleSchema(provider, BillingDbContext.Schema)
+                .EnableServiceProviderCaching(false));
         using var app = services.BuildServiceProvider();
         using var scope = app.CreateScope();
 
@@ -80,7 +82,8 @@ public sealed class PersistenceSetupTests
             .AddPersistence("Host=localhost;Database=unused")
             .AddDbContext<BillingDbContext>((provider, options) => options
                 .UseModuleSchema(provider, BillingDbContext.Schema)
-                .UseNpgsql(npgsql => npgsql.EnableRetryOnFailure()));
+                .UseNpgsql(npgsql => npgsql.EnableRetryOnFailure())
+                .EnableServiceProviderCaching(false));
         using var app = services.BuildServiceProvider();
         using var scope = app.CreateScope();
 

@@ -5,7 +5,7 @@
 - `Claudalisk.Dotnet.slnx` lists every project. A test fails when a project under `src/` or `tests/` is missing from it, because CI tests only what the solution lists.
 - Each package lives in `src/<Package>/`, and its tests in `tests/<Package>.Tests/`.
 - `Directory.Build.props` targets .NET 10 with nullable enabled and warnings as errors. `Directory.Packages.props` holds every package version, and each project commits its `packages.lock.json`.
-- `tests/Claudalisk.Ci.Tests` checks the repository rules and proves that CI can run Testcontainers tests against real PostgreSQL.
+- `tests/Claudalisk.Ci.Tests` checks the repository rules. `tests/Claudalisk.Persistence.Tests` runs against real PostgreSQL in Testcontainers.
 
 ## Local build
 
