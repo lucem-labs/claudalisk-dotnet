@@ -11,6 +11,11 @@ internal sealed record ModuleDeclaration(IModule Module, Type ModuleType, Type C
 
         var moduleType = module.GetType();
         var contract = module.Contract ?? throw new ArgumentException($"{moduleType.Name} has no contract.", parameterName);
+        if (!contract.IsClass || contract.ContainsGenericParameters || contract == moduleType)
+        {
+            throw new ArgumentException($"{moduleType.Name} declares {contract.Name} as its contract, but a contract is the module's marker class from its Interfaces project.", parameterName);
+        }
+
         var dependencies = module.Dependencies ?? throw new ArgumentException($"{moduleType.Name} has no dependency list.", parameterName);
         if (dependencies.Any(dependency => dependency is null))
         {

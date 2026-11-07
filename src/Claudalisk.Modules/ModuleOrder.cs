@@ -8,12 +8,13 @@ internal static class ModuleOrder
             .Concat(candidates.Select(module => (module.Contract, module.ModuleType)))
             .GroupBy(provider => provider.Contract)
             .ToList();
+        var contracts = providers.Select(group => group.Key).ToHashSet();
 
         var errors = providers
             .Where(group => group.Count() > 1)
-            .Select(group => $"{group.Key.Name} is ambiguous: it is the contract of {string.Join(", ", group.Select(provider => provider.ModuleType.Name))}.")
+            .Select(group => $"{group.Key.Name} is ambiguous: it is the contract of {string.Join(", ", Names(group.Select(provider => provider.ModuleType).ToList()))}.")
             .Concat(candidates.SelectMany(module => module.Dependencies
-                .Where(dependency => !providers.Any(group => group.Key == dependency))
+                .Where(dependency => !contracts.Contains(dependency))
                 .Select(dependency => $"{module.ModuleType.Name} depends on {dependency.Name}, but no module declares it as its contract.")))
             .ToList();
 
@@ -24,6 +25,11 @@ internal static class ModuleOrder
 
         return Sort(candidates);
     }
+
+    private static IEnumerable<string> Names(List<Type> moduleTypes) =>
+        moduleTypes.DistinctBy(moduleType => moduleType.Name).Count() == moduleTypes.Count
+            ? moduleTypes.Select(moduleType => moduleType.Name)
+            : moduleTypes.Select(moduleType => moduleType.FullName ?? moduleType.Name);
 
     private static List<ModuleDeclaration> Sort(IReadOnlyList<ModuleDeclaration> candidates)
     {

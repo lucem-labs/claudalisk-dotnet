@@ -20,6 +20,48 @@ public sealed class ControllerDiscoveryTests
         Assert.Equal("tea", await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
     }
 
+    public static TheoryData<string> HostSetups() => ["mvc-core-first", "controllers-first", "controllers-after"];
+
+    [Theory]
+    [MemberData(nameof(HostSetups))]
+    public async Task AModulesControllerAnswersWhateverOrderTheHostAddsMvcIn(string setup)
+    {
+        await using var app = TestHosts.Build(builder =>
+        {
+            if (setup == "mvc-core-first")
+            {
+                builder.Services.AddMvcCore();
+            }
+            else if (setup == "controllers-first")
+            {
+                builder.Services.AddControllers();
+            }
+
+            builder.Services.AddModules(builder.Configuration, new CatalogModule());
+
+            if (setup == "controllers-after")
+            {
+                builder.Services.AddControllers();
+            }
+        });
+        using var client = await TestHosts.StartAsync(app);
+
+        using var response = await client.GetAsync(new Uri("api/catalog/prices/tea", UriKind.Relative), TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public void AnEarlierModuleKeepsItsControllersWhenALaterModuleFailsToRegister()
+    {
+        var services = new ServiceCollection();
+
+        Assert.Throws<InvalidOperationException>(() => services.AddModules(Configurations.Empty, new CatalogModule(), new FailingModule()));
+        services.AddModules(Configurations.Empty, new CatalogModule());
+
+        Assert.Contains(typeof(GetPriceController), Controllers(services));
+    }
+
     [Fact]
     public async Task AHostWithoutTheModuleDoesNotRouteToItsController()
     {

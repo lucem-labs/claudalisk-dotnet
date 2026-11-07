@@ -94,6 +94,12 @@ internal sealed class ConfiguredModule(RegistrationLog? log = null) : ExampleMod
         Currency = configuration["Payments:Currency"];
 }
 
+internal sealed class FailingModule(RegistrationLog? log = null) : ExampleModule(log, typeof(RefundsContract))
+{
+    protected override void RegisterServices(IServiceCollection services, IConfiguration configuration) =>
+        throw new InvalidOperationException("Refunds needs a payment provider.");
+}
+
 internal static class Configurations
 {
     public static IConfiguration Empty { get; } = new ConfigurationBuilder().Build();

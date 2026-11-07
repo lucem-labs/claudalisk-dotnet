@@ -15,10 +15,11 @@ public static class ModuleServiceCollectionExtensions
 
         var registry = FindRegistry(services);
         var registered = registry?.Modules ?? [];
+        var registeredTypes = registered.Select(module => module.ModuleType).ToHashSet();
         var candidates = modules
             .Select(module => ModuleDeclaration.Read(module, nameof(modules)))
             .DistinctBy(module => module.ModuleType)
-            .Where(module => !registered.Any(existing => existing.ModuleType == module.ModuleType))
+            .Where(module => !registeredTypes.Contains(module.ModuleType))
             .ToList();
 
         var ordered = ModuleOrder.Resolve(registered, candidates);
@@ -34,13 +35,14 @@ public static class ModuleServiceCollectionExtensions
             return services;
         }
 
+        AddApplicationParts(services, registry, ordered.Select(module => module.ModuleType.Assembly).Distinct());
+
         foreach (var module in ordered)
         {
             module.Module.Register(new ModuleRegistration(services, configuration, module.Contract));
             registry.Add(new RegisteredModule(module.ModuleType, module.Contract, module.Dependencies));
         }
 
-        AddApplicationParts(services, registry, ordered.Select(module => module.ModuleType.Assembly).Distinct());
         return services;
     }
 
@@ -59,14 +61,13 @@ public static class ModuleServiceCollectionExtensions
             registry.ControllersAdded = true;
         }
 
-        var manager = services
-            .Select(descriptor => descriptor.ImplementationInstance)
-            .OfType<ApplicationPartManager>()
-            .Last();
+        var manager = services.LastOrDefault(descriptor => descriptor.ServiceType == typeof(ApplicationPartManager))?.ImplementationInstance as ApplicationPartManager
+            ?? throw new InvalidOperationException("ApplicationPartManager is registered without an instance, so the module assemblies cannot be added as application parts. Let AddControllers register it.");
 
         foreach (var assembly in assemblies)
         {
-            if (manager.ApplicationParts.OfType<AssemblyPart>().Any(part => part.Assembly == assembly))
+            var name = assembly.GetName().Name;
+            if (manager.ApplicationParts.Any(part => part.Name == name))
             {
                 continue;
             }

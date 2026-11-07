@@ -119,6 +119,26 @@ public sealed class DependencyValidationTests
         Assert.StartsWith("ContractlessModule has no contract.", error.Message, StringComparison.Ordinal);
     }
 
+    public static TheoryData<string> InvalidContracts() => ["interface", "open-generic", "module-itself"];
+
+    [Theory]
+    [MemberData(nameof(InvalidContracts))]
+    public void AContractThatIsNotAMarkerClassIsRejected(string kind)
+    {
+        var contract = kind switch
+        {
+            "interface" => typeof(IDisposable),
+            "open-generic" => typeof(List<>),
+            _ => typeof(ContractModule),
+        };
+        var services = new ServiceCollection();
+
+        var error = Assert.Throws<ArgumentException>(() => services.AddModules(Configurations.Empty, new ContractModule(contract)));
+
+        Assert.StartsWith($"ContractModule declares {contract.Name} as its contract", error.Message, StringComparison.Ordinal);
+        Assert.Empty(services);
+    }
+
     [Fact]
     public void ANullDependencyIsRejected()
     {
@@ -132,6 +152,17 @@ public sealed class DependencyValidationTests
     private sealed class ContractlessModule : IModule
     {
         public Type Contract => null!;
+
+        public IReadOnlyCollection<Type> Dependencies => [];
+
+        public void Register(ModuleRegistration registration)
+        {
+        }
+    }
+
+    private sealed class ContractModule(Type contract) : IModule
+    {
+        public Type Contract => contract;
 
         public IReadOnlyCollection<Type> Dependencies => [];
 

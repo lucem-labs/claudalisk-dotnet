@@ -68,10 +68,11 @@ public sealed class RepeatedRegistrationTests
     public void ARepeatedCallDoesNotAddControllersAgain()
     {
         var services = new ServiceCollection().AddModules(Configurations.Empty, new BillingModule());
-        var before = services.Count;
+        var before = services.ToList();
 
         services.AddModules(Configurations.Empty, new OrderingModule());
 
-        Assert.Equal(before + 1, services.Count);
+        var added = services.Except(before).ToList();
+        Assert.Equal([typeof(OrderBook)], added.Select(descriptor => descriptor.ServiceType));
     }
 }
