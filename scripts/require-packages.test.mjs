@@ -17,8 +17,13 @@ test('lists the .nupkg files and leaves out symbol packages', () => {
 });
 
 test('passes and prints the packages when there is at least one', () => {
-  const { code, out, err } = run(['artifacts'], () => ['Claudalisk.Domain.0.1.0-alpha.1.nupkg', 'Claudalisk.Domain.0.1.0-alpha.1.snupkg']);
+  const listed = [];
+  const { code, out, err } = run(['artifacts'], (folder) => {
+    listed.push(folder);
+    return ['Claudalisk.Domain.0.1.0-alpha.1.nupkg', 'Claudalisk.Domain.0.1.0-alpha.1.snupkg'];
+  });
   assert.equal(code, 0);
+  assert.deepEqual(listed, ['artifacts']);
   assert.deepEqual(out, ['Claudalisk.Domain.0.1.0-alpha.1.nupkg']);
   assert.deepEqual(err, []);
 });

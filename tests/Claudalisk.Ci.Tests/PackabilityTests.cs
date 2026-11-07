@@ -1,76 +1,70 @@
-using System.Xml.Linq;
+using System.Diagnostics;
 
 namespace Claudalisk.Ci.Tests;
 
-public sealed class PackabilityTests
+public sealed class PackabilityTests : IDisposable
 {
-    private static readonly DirectoryInfo RepositoryRoot = FindRepositoryRoot();
+    private const string PackableProject = """
+        <Project Sdk="Microsoft.NET.Sdk">
+          <PropertyGroup>
+            <IsPackable>true</IsPackable>
+          </PropertyGroup>
+        </Project>
+        """;
+
+    private readonly DirectoryInfo _fixture = Directory.CreateDirectory(
+        Path.Combine(AppContext.BaseDirectory, "pack-fixtures", Guid.NewGuid().ToString("N")));
 
     [Fact]
-    public void ProjectsAreNotPackableByDefault()
+    public async Task PackRefusesAPackableProjectWithNoSourceFiles()
     {
-        var props = XDocument.Load(Path.Combine(RepositoryRoot.FullName, "Directory.Build.props"));
+        var project = WriteProject("Claudalisk.EmptyFixture");
 
-        Assert.Equal(["false"], PropertyValues(props, "IsPackable"));
+        var result = await PackAsync(project);
+
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.Contains("CLAUDALISK0001", result.Output, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void OnlyPackagesWithSourceFilesArePackable()
+    public async Task PackAcceptsAPackableProjectWithSourceFiles()
     {
-        var emptyPackableProjects = SourceProjects()
-            .Where(project => PropertyValues(XDocument.Load(project.FullName), "IsPackable").Contains("true", StringComparer.OrdinalIgnoreCase))
-            .Where(project => !HasSourceFiles(project.Directory!))
-            .Select(project => Path.GetRelativePath(RepositoryRoot.FullName, project.FullName))
-            .ToList();
+        var project = WriteProject("Claudalisk.ContentFixture");
+        File.WriteAllText(Path.Combine(project.DirectoryName!, "Marker.cs"), "namespace Claudalisk.ContentFixture;\n\npublic sealed class Marker;\n");
 
-        Assert.Empty(emptyPackableProjects);
+        var result = await PackAsync(project);
+
+        Assert.True(result.ExitCode == 0, result.Output);
+        Assert.Single(Directory.GetFiles(Path.Combine(_fixture.FullName, "out"), "Claudalisk.ContentFixture.*.nupkg"));
     }
 
-    [Fact]
-    public void EveryProjectIsInTheSolution()
+    public void Dispose() => _fixture.Delete(recursive: true);
+
+    private FileInfo WriteProject(string name)
     {
-        var solution = XDocument.Load(Path.Combine(RepositoryRoot.FullName, "Claudalisk.Dotnet.slnx"));
-        var listed = solution.Descendants("Project")
-            .Select(project => project.Attribute("Path")!.Value.Replace('\\', '/'))
-            .ToHashSet(StringComparer.Ordinal);
-
-        var missing = ProjectFiles("src").Concat(ProjectFiles("tests"))
-            .Select(project => Path.GetRelativePath(RepositoryRoot.FullName, project.FullName).Replace('\\', '/'))
-            .Where(path => !listed.Contains(path))
-            .ToList();
-
-        Assert.Empty(missing);
+        var directory = _fixture.CreateSubdirectory(name);
+        var project = new FileInfo(Path.Combine(directory.FullName, $"{name}.csproj"));
+        File.WriteAllText(project.FullName, PackableProject);
+        return project;
     }
 
-    private static IEnumerable<FileInfo> SourceProjects() => ProjectFiles("src");
-
-    private static IEnumerable<FileInfo> ProjectFiles(string folder)
+    private async Task<(int ExitCode, string Output)> PackAsync(FileInfo project)
     {
-        var directory = new DirectoryInfo(Path.Combine(RepositoryRoot.FullName, folder));
-        return directory.Exists
-            ? directory.EnumerateFiles("*.csproj", SearchOption.AllDirectories).Where(file => !IsBuildOutput(file.Directory!))
-            : [];
-    }
-
-    private static bool HasSourceFiles(DirectoryInfo projectDirectory) =>
-        projectDirectory.EnumerateFiles("*.cs", SearchOption.AllDirectories).Any(file => !IsBuildOutput(file.Directory!));
-
-    private static bool IsBuildOutput(DirectoryInfo directory) =>
-        directory.FullName.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Any(part => part is "bin" or "obj");
-
-    private static string[] PropertyValues(XDocument project, string name) =>
-        project.Descendants("PropertyGroup").Elements(name).Select(element => element.Value.Trim()).ToArray();
-
-    private static DirectoryInfo FindRepositoryRoot()
-    {
-        for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
+        var startInfo = new ProcessStartInfo(Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet")
         {
-            if (File.Exists(Path.Combine(directory.FullName, "Claudalisk.Dotnet.slnx")))
-            {
-                return directory;
-            }
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        foreach (var argument in new[] { "pack", project.FullName, "--output", Path.Combine(_fixture.FullName, "out"), "--disable-build-servers", "-nodeReuse:false" })
+        {
+            startInfo.ArgumentList.Add(argument);
         }
 
-        throw new InvalidOperationException("Claudalisk.Dotnet.slnx was not found above the test output folder.");
+        using var process = Process.Start(startInfo)!;
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var output = process.StandardOutput.ReadToEndAsync(cancellationToken);
+        var error = process.StandardError.ReadToEndAsync(cancellationToken);
+        await process.WaitForExitAsync(cancellationToken);
+        return (process.ExitCode, await output + await error);
     }
 }
