@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>Claudalisk.Dispatching.Abstractions</PackageId>
+    <Description>The dispatcher, handler and pipeline step contracts, with no dependencies.</Description>
+    <PackageTags>claudalisk;dispatcher;mediator;cqrs;modular-monolith</PackageTags>
+  </PropertyGroup>
+</Project>
