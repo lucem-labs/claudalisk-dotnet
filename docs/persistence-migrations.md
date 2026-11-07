@@ -19,7 +19,7 @@ The examples use the modules `ordering` and `billing`, and an old shared schema 
 2. **Baselines:** every `AddMigrationBaseline(schema, migration, replaces)` registration records a baseline in place of the migrations it replaces.
 3. **Migrations:** each registered context migrates, in registration order.
 
-Each step changes nothing when it has no registrations. Steps 1 and 2 each run in one unit of work, so a refusal leaves the database unchanged.
+Each step changes nothing when it has no registrations. Steps 1 and 2 each run in their own unit of work, so a refusal undoes everything its own step did. A step that already finished stays committed: when a baseline is refused after a history move, the move stays.
 
 ## Migration histories and naming conventions
 
@@ -35,7 +35,9 @@ Code that reads or writes a history takes the table and column names from EF Cor
 - resolve `IHistoryRepository` from a context configured like the one that wrote the history;
 - use its `ExistsAsync`, `GetAppliedMigrationsAsync`, `GetInsertScript` and `GetDeleteScript`.
 
-`MigrationBaselines` does this. It reads every history before it writes any, outside the transaction. Npgsql's `ExistsAsync` detects a missing table by catching a failed query, and inside a transaction that failure would abort it.
+`MigrationBaselines` does this. It reads every history before it writes any, outside the transaction. Npgsql's `ExistsAsync` detects a missing table by catching a failed query, and inside a transaction that failure would abort it. So call `DatabaseInitializer.MigrateAsync` outside any unit of work.
+
+`MigrationBaselines` reads histories through `UseModuleSchema`, so it handles only module histories, with snake_case columns. A baseline replaces a module's own migrations, never a shared context's.
 
 A script that reads histories without EF Core, such as a backup manifest, must handle both column sets. It can also ask the Host to list the migrations instead.
 
@@ -59,7 +61,7 @@ Every database that will adopt the baseline must hold every migration the baseli
    - library tables, such as the jobs table (`JobsTable.CreateSql(schema)` from `Claudalisk.Jobs.PostgreSql`);
    - expression indexes, such as a unique index on `lower(name)`, and partial indexes;
    - default rows, inserted idempotently (CLA-0009).
-4. List every removed migration in `approved-migration-edits.txt`, one line each, as CLA-0010 describes. The owner approves the lines by merging.
+4. Get the removed migrations past the migration guards. The CI check and the uat deploy refuse a commit that drops a migration tracked on `origin/main` or applied to uat (CLA-0010, CLA-0030). The deploy refuses before it migrates, so it refuses before the baseline step can run. CLA-0010's exceptions are lines in `approved-migration-edits.txt`, which only the owner edits, read from `origin/main`. CLA-0010 does not yet define a line for a removed migration, which has no file to hash, and the deploy does not read one yet. Settle both with the owner before the pull request (lucem-labs/claudalisk#85).
 
 ### 3. Register the baseline
 
@@ -78,9 +80,9 @@ services.AddMigrationBaseline(
 |---|---|
 | holds exactly the replaced migrations | the baseline is recorded in their place; no table or row changes |
 | already records the baseline | nothing |
-| does not exist, and the schema has no tables | nothing; the migrate step applies the baseline |
+| does not exist or is empty, and the schema has no tables | nothing; the migrate step applies the baseline |
 | misses a replaced migration, or holds one that is not listed | refused, with the missing and unknown ids |
-| does not exist, but the schema has tables | refused |
+| does not exist or is empty, but the schema has tables | refused |
 
 Every schema that adopts a baseline does so in one transaction, so a refusal in one schema changes no other.
 
@@ -113,9 +115,9 @@ Put the result in the pull request.
 
 ### 7. Retire the old history
 
-A baseline that replaced a shared context's migrations leaves that context's history behind, such as `public."__EFMigrationsHistory"`. Nothing reads it. Do not keep code that guards it, and do not add exceptions for it. Instead:
+When the baselines replace migrations that moved tables out of a shared context, the same change removes the legacy context and its migrations (see below). The legacy context's history stays behind, such as `public."__EFMigrationsHistory"`. Once the legacy context is gone, nothing reads that history. While it is still registered, its migrate step reads the history, and dropping it would replay every old migration. Do not keep code that guards the retired history, and do not add exceptions for it. Instead:
 
-1. Wait until every environment has adopted the baseline.
+1. Wait until every environment has adopted the baseline and runs without the legacy context.
 2. Add a one-off raw-SQL migration to one module, which drops the retired history:
 
    ```csharp
@@ -123,7 +125,7 @@ A baseline that replaced a shared context's migrations leaves that context's his
    ```
 
    Its `Down` recreates nothing: the history it drops describes migrations that no longer exist.
-3. In the same pull request, delete any code that handled the retired history, and its lines in `approved-migration-edits.txt`.
+3. In the same pull request, delete any code that handled the retired history. The owner removes its lines from `approved-migration-edits.txt` on `main`.
 4. Declare backups older than the baseline's starting layout unsupported, in the pull request and in the app's backup docs. To bring one forward, restore it and migrate it with the last commit before the baseline, and then with the current one.
 
 The uat deploy counts a migration as missing only in a schema the commit migrates (CLA-0030), so a retired history needs no exception, not even in the deploy that drops it.
@@ -150,7 +152,7 @@ public static IServiceCollection AddLegacyDatabase(this IServiceCollection servi
 }
 ```
 
-The Host calls `AddPersistence`, then `AddLegacyDatabase`, then `AddModules`. The database is not a module, so no module depends on the legacy context.
+The Host calls `AddPersistence`, then `AddLegacyDatabase`, then `AddModules`. The database is not a module, so no module depends on the legacy context. The legacy context only migrates. It has no `UseModuleSchema` interceptor, so it never joins a unit of work, and nothing reads or writes data through it.
 
 ### 2. Move the tables in place
 
@@ -223,7 +225,7 @@ migrationBuilder.Sql("DROP SCHEMA shipping;");
 
 - Move every table, including the jobs library's table and every other library table in the schema. Sequences owned by a column move with their table; move any other sequence, view or function too.
 - `DROP SCHEMA` without `CASCADE` fails if anything was left behind.
-- `Down` recreates the old schema, moves everything back, and leaves the history where step 1 put it.
+- `Down` recreates the old schema and moves everything back. The history stays where step 1 put it, because the renamed module's context reads it there. `Down` is for the fresh-database test. To roll a deploy back to the old name, restore the backup taken before it (CLA-0031). The old code looks for its history in the old schema, finds none beside its tables, and fails.
 
 The rename also changes the module's other names: its projects and namespaces, job links (`/api/jobs/<module>/{id}`), problem types (`/problems/<module>/<slug>`), the module named in its schedules and the OpenAPI tag. Old job links and problem types stop resolving, and the frontend's entity slice is renamed to match.
 

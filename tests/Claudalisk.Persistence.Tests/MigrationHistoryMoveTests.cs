@@ -33,6 +33,26 @@ public sealed class MigrationHistoryMoveTests
     }
 
     [Fact]
+    public async Task ARefusedMoveUndoesTheMovesBeforeIt()
+    {
+        var database = await PostgresServer.CreateEmptyDatabaseAsync();
+        await MigrateAsync(database, moved: false);
+        await ExecuteAsync(database, "CREATE SCHEMA shop; ALTER TABLE orders.\"__EFMigrationsHistory\" SET SCHEMA shop");
+        await ExecuteAsync(database, "CREATE SCHEMA till; CREATE TABLE till.\"__EFMigrationsHistory\" (migration_id varchar(150) PRIMARY KEY, product_version varchar(32) NOT NULL)");
+        await using var app = PostgresServer.CreateApp(database, services => services
+            .AddMovedMigrationHistory("shop", OrdersDbContext.Schema)
+            .AddMovedMigrationHistory("till", BillingDbContext.Schema));
+        await using var scope = app.CreateAsyncScope();
+
+        var refused = await Assert.ThrowsAsync<MigrationHistoryMoveException>(
+            () => scope.ServiceProvider.GetRequiredService<DatabaseInitializer>().MigrateAsync(TestContext.Current.CancellationToken));
+
+        Assert.Contains("Both schema till and schema billing", refused.Message);
+        Assert.Equal("1", await ScalarAsync(database, "SELECT count(*)::text FROM shop.\"__EFMigrationsHistory\""));
+        Assert.Equal("0", await ScalarAsync(database, "SELECT count(*)::text FROM information_schema.tables WHERE table_schema = 'orders' AND table_name = '__EFMigrationsHistory'"));
+    }
+
+    [Fact]
     public async Task AFreshDatabaseMigratesAsIfNothingMoved()
     {
         var database = await PostgresServer.CreateEmptyDatabaseAsync();

@@ -57,6 +57,23 @@ public sealed class MigrationBaselineTests
     }
 
     [Fact]
+    public async Task ARefusalInOneSchemaRecordsNoBaselineInAnother()
+    {
+        var database = await TransitionalDatabaseAsync(Replaced);
+        await using var app = PostgresServer.CreateApp(database, services => services
+            .AddMigrationBaseline(OrdersDbContext.Schema, Baseline, Replaced)
+            .AddMigrationBaseline(BillingDbContext.Schema, "20261101000000_BillingBaseline", ["20261026000000_InitialBilling", "20261027000000_Missing"]));
+        await using var scope = app.CreateAsyncScope();
+
+        var refused = await Assert.ThrowsAsync<MigrationBaselineException>(
+            () => scope.ServiceProvider.GetRequiredService<DatabaseInitializer>().MigrateAsync(TestContext.Current.CancellationToken));
+
+        Assert.Contains("Missing: 20261027000000_Missing", refused.Message);
+        Assert.Equal(Replaced, await HistoryAsync(database, OrdersDbContext.Schema));
+        Assert.Equal(["20261026000000_InitialBilling"], await HistoryAsync(database, BillingDbContext.Schema));
+    }
+
+    [Fact]
     public async Task ASchemaWithTablesButNoHistoryIsRefused()
     {
         var database = await PostgresServer.CreateEmptyDatabaseAsync();
