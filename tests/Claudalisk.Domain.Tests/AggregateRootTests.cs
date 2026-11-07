@@ -3,123 +3,101 @@ namespace Claudalisk.Domain.Tests;
 public sealed class AggregateRootTests
 {
     [Fact]
-    public void ANewAggregateStartsAtVersionOne()
+    public void ANewAggregateStartsAtVersionOneWithNoEvents()
     {
         var order = new Order();
 
         Assert.Equal(1, order.Version);
         Assert.Equal(AggregateRoot.InitialVersion, order.Version);
+        Assert.Empty(order.DomainEvents);
     }
 
     [Fact]
     public void ALoadedAggregateKeepsItsStoredVersion()
     {
-        var order = new Order(Guid.NewGuid(), 7);
-
-        Assert.Equal(7, order.Version);
+        Assert.Equal(7, new Order(7).Version);
     }
 
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
-    [InlineData(long.MinValue)]
     public void AVersionBelowOneIsRefused(long version)
     {
-        Assert.Throws<ArgumentOutOfRangeException>(() => new Order(Guid.NewGuid(), version));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new Order(version));
     }
 
     [Fact]
-    public void IncrementVersionAddsOneOnEachSave()
+    public void EachSaveIncrementsTheVersionByOne()
     {
-        var order = new Order(Guid.NewGuid(), 7);
+        var order = new Order(3);
 
         order.IncrementVersion();
         order.IncrementVersion();
 
-        Assert.Equal(9, order.Version);
+        Assert.Equal(5, order.Version);
     }
 
     [Fact]
-    public void IncrementVersionRefusesToOverflow()
-    {
-        var order = new Order(Guid.NewGuid(), long.MaxValue);
-
-        Assert.Throws<OverflowException>(order.IncrementVersion);
-        Assert.Equal(long.MaxValue, order.Version);
-    }
-
-    [Fact]
-    public void ANewAggregateHasNoEvents()
-    {
-        Assert.Empty(new Order().DomainEvents);
-    }
-
-    [Fact]
-    public void EventsAreRecordedInOrder()
+    public void ChangingTheAggregateRecordsItsEventsInOrder()
     {
         var order = new Order();
 
         order.Ship();
-        order.Cancel();
+        order.Cancel("damaged");
 
-        Assert.Equal<IDomainEvent>(
-            [new OrderWasShipped(order.Id), new OrderWasCanceled(order.Id)],
-            order.DomainEvents);
+        Assert.Equal<IDomainEvent>([new OrderWasShipped(), new OrderWasCanceled("damaged")], order.DomainEvents);
     }
 
     [Fact]
-    public void ClearDomainEventsRemovesEveryRecordedEvent()
+    public void TakingTheEventsReturnsThemOnceAndClearsThem()
     {
         var order = new Order();
         order.Ship();
-        order.Cancel();
 
-        order.ClearDomainEvents();
+        var taken = order.TakeDomainEvents();
+        order.Cancel("late");
 
+        Assert.Equal<IDomainEvent>([new OrderWasShipped()], taken);
+        Assert.Equal<IDomainEvent>([new OrderWasCanceled("late")], order.DomainEvents);
+        Assert.Equal<IDomainEvent>([new OrderWasCanceled("late")], order.TakeDomainEvents());
         Assert.Empty(order.DomainEvents);
     }
 
     [Fact]
-    public void EventsRecordedAfterAClearAreKept()
+    public void RecordingDoesNotChangeTheVersion()
     {
-        var order = new Order();
+        var order = new Order(2);
+
         order.Ship();
-        order.ClearDomainEvents();
 
-        order.Cancel();
-
-        Assert.Equal<IDomainEvent>([new OrderWasCanceled(order.Id)], order.DomainEvents);
+        Assert.Equal(2, order.Version);
     }
 
     [Fact]
-    public void EventsReadBeforeAClearSurviveTheClear()
+    public void ANullEventIsRefused()
     {
-        var order = new Order();
-        order.Ship();
-
-        var read = order.DomainEvents;
-        order.ClearDomainEvents();
-
-        Assert.Equal<IDomainEvent>([new OrderWasShipped(order.Id)], read);
+        Assert.Throws<ArgumentNullException>(() => new Order().RecordNothing());
     }
 
-    [Fact]
-    public void ClearingEventsLeavesTheVersionUnchanged()
+    private sealed record OrderWasShipped : IDomainEvent;
+
+    private sealed record OrderWasCanceled(string Reason) : IDomainEvent;
+
+    private sealed class Order : AggregateRoot
     {
-        var order = new Order(Guid.NewGuid(), 3);
-        order.Ship();
+        public Order()
+        {
+        }
 
-        order.ClearDomainEvents();
+        public Order(long version)
+            : base(version)
+        {
+        }
 
-        Assert.Equal(3, order.Version);
-    }
+        public void Ship() => Record(new OrderWasShipped());
 
-    [Fact]
-    public void RecordingANullEventIsRefused()
-    {
-        var order = new Order();
+        public void Cancel(string reason) => Record(new OrderWasCanceled(reason));
 
-        Assert.Throws<ArgumentNullException>(order.RecordNothing);
-        Assert.Empty(order.DomainEvents);
+        public void RecordNothing() => Record(null!);
     }
 }

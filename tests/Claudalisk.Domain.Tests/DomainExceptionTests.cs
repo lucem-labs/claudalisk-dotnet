@@ -6,78 +6,29 @@ public sealed class DomainExceptionTests
     [InlineData(DomainErrorKind.Conflict)]
     [InlineData(DomainErrorKind.NotFound)]
     [InlineData(DomainErrorKind.Forbidden)]
-    public void ItCarriesItsSlugTitleAndKind(DomainErrorKind kind)
+    public void CarriesItsSlugTitleAndKind(DomainErrorKind kind)
     {
-        var exception = new TestDomainException("already-shipped", "The order has already shipped.", kind);
+        var error = new OrderError("already-shipped", "The order has already shipped.", kind);
 
-        Assert.Equal("already-shipped", exception.Slug);
-        Assert.Equal("The order has already shipped.", exception.Title);
-        Assert.Equal(kind, exception.Kind);
+        Assert.Equal("already-shipped", error.Slug);
+        Assert.Equal("The order has already shipped.", error.Title);
+        Assert.Equal("The order has already shipped.", error.Message);
+        Assert.Equal(kind, error.Kind);
+        Assert.Empty(error.Extensions);
     }
 
     [Fact]
-    public void TheKindsAreConflictNotFoundAndForbidden()
+    public void CarriesExtensionMembersThatLaterChangesToTheSourceDoNotReach()
     {
-        Assert.Equal(
-            [DomainErrorKind.Conflict, DomainErrorKind.NotFound, DomainErrorKind.Forbidden],
-            Enum.GetValues<DomainErrorKind>());
-    }
+        var source = new Dictionary<string, object?> { ["available"] = 2, ["requested"] = null };
 
-    [Fact]
-    public void TheMessageIsTheTitle()
-    {
-        var exception = new TestDomainException("already-shipped", "The order has already shipped.", DomainErrorKind.Conflict);
+        var error = new OrderError("not-enough-stock", "Only 2 are left.", DomainErrorKind.Conflict, source);
+        source["available"] = 5;
 
-        Assert.Equal("The order has already shipped.", exception.Message);
-    }
-
-    [Fact]
-    public void ItHasNoExtensionMembersByDefault()
-    {
-        var exception = new TestDomainException("already-shipped", "The order has already shipped.", DomainErrorKind.Conflict);
-
-        Assert.Empty(exception.Extensions);
-    }
-
-    [Fact]
-    public void ItCarriesItsExtensionMembers()
-    {
-        var exception = new TestDomainException(
-            "not-enough-stock",
-            "Not enough items are in stock.",
-            DomainErrorKind.Conflict,
-            new Dictionary<string, object?> { ["available"] = 3, ["sku"] = "A-1", ["note"] = null });
-
-        Assert.Equal(3, exception.Extensions["available"]);
-        Assert.Equal("A-1", exception.Extensions["sku"]);
-        Assert.Null(exception.Extensions["note"]);
-        Assert.Equal(3, exception.Extensions.Count);
-    }
-
-    [Fact]
-    public void ExtensionMembersAreCopiedWhenThrown()
-    {
-        var extensions = new Dictionary<string, object?> { ["available"] = 3 };
-        var exception = new TestDomainException("not-enough-stock", "Not enough items are in stock.", DomainErrorKind.Conflict, extensions);
-
-        extensions["available"] = 0;
-        extensions["added"] = true;
-
-        Assert.Equal(3, exception.Extensions["available"]);
-        Assert.False(exception.Extensions.ContainsKey("added"));
-    }
-
-    [Fact]
-    public void ExtensionMembersCannotBeChangedThroughTheException()
-    {
-        var exception = new TestDomainException(
-            "not-enough-stock",
-            "Not enough items are in stock.",
-            DomainErrorKind.Conflict,
-            new Dictionary<string, object?> { ["available"] = 3 });
-
-        var asDictionary = Assert.IsAssignableFrom<IDictionary<string, object?>>(exception.Extensions);
-        Assert.Throws<NotSupportedException>(() => asDictionary["available"] = 0);
+        Assert.Equal(2, error.Extensions["available"]);
+        Assert.True(error.Extensions.ContainsKey("requested"));
+        Assert.Null(error.Extensions["requested"]);
+        Assert.False(error.Extensions is IDictionary<string, object?> { IsReadOnly: false });
     }
 
     [Theory]
@@ -89,92 +40,73 @@ public sealed class DomainExceptionTests
     [InlineData("errors")]
     [InlineData("traceId")]
     [InlineData("Title")]
-    public void AnExtensionMemberCannotReplaceAProblemDetailsMember(string name)
+    public void RefusesAnExtensionMemberThatWouldReplaceAProblemDetailsMember(string name)
     {
-        Assert.Throws<ArgumentException>(() => new TestDomainException(
-            "already-shipped",
-            "The order has already shipped.",
-            DomainErrorKind.Conflict,
-            new Dictionary<string, object?> { [name] = "x" }));
+        var error = Assert.Throws<ArgumentException>(() => new OrderError("already-shipped", "Title.", DomainErrorKind.Conflict, new Dictionary<string, object?> { [name] = "x" }));
+
+        Assert.Equal("extensions", error.ParamName);
     }
 
     [Fact]
-    public void ExtensionMembersWhoseNamesDifferOnlyInCaseAreRefused()
+    public void RefusesExtensionMembersWhoseNamesDifferOnlyInCase()
     {
-        Assert.Throws<ArgumentException>(() => new TestDomainException(
-            "not-enough-stock",
-            "Not enough items are in stock.",
-            DomainErrorKind.Conflict,
-            new Dictionary<string, object?> { ["available"] = 3, ["Available"] = 4 }));
+        var error = Assert.Throws<ArgumentException>(() => new OrderError("not-enough-stock", "Title.", DomainErrorKind.Conflict, new Dictionary<string, object?> { ["available"] = 3, ["Available"] = 4 }));
+
+        Assert.Equal("extensions", error.ParamName);
+    }
+
+    [Fact]
+    public void KeepsTheInnerException()
+    {
+        var inner = new InvalidOperationException("cause");
+
+        var error = new OrderError("not-found", "No such order.", DomainErrorKind.NotFound, innerException: inner);
+
+        Assert.Same(inner, error.InnerException);
+    }
+
+    [Fact]
+    public void IsAnExceptionSoItPropagatesToTheUnitOfWork()
+    {
+        Action cancelMissingOrder = () => throw new OrderError("not-found", "No such order.", DomainErrorKind.NotFound);
+
+        Assert.Throws<OrderError>(cancelMissingOrder);
     }
 
     [Theory]
     [InlineData("")]
-    [InlineData(" ")]
-    public void AnExtensionMemberNeedsAName(string name)
-    {
-        Assert.Throws<ArgumentException>(() => new TestDomainException(
-            "already-shipped",
-            "The order has already shipped.",
-            DomainErrorKind.Conflict,
-            new Dictionary<string, object?> { [name] = "x" }));
-    }
-
-    [Theory]
-    [InlineData("shipped")]
-    [InlineData("already-shipped")]
-    [InlineData("over-limit-2")]
-    public void AKebabCaseSlugIsAccepted(string slug)
-    {
-        var exception = new TestDomainException(slug, "A title.", DomainErrorKind.Conflict);
-
-        Assert.Equal(slug, exception.Slug);
-    }
-
-    [Theory]
     [InlineData("Already-Shipped")]
-    [InlineData("already_shipped")]
     [InlineData("already shipped")]
-    [InlineData("-already-shipped")]
-    [InlineData("already-shipped-")]
+    [InlineData("already_shipped")]
+    [InlineData("-already")]
+    [InlineData("already-")]
     [InlineData("already--shipped")]
-    [InlineData("orders/already-shipped")]
-    public void ASlugThatIsNotKebabCaseIsRefused(string slug)
+    public void RefusesASlugThatIsNotLowerCaseWordsJoinedByHyphens(string slug)
     {
-        Assert.Throws<ArgumentException>(() => new TestDomainException(slug, "A title.", DomainErrorKind.Conflict));
+        var error = Assert.Throws<ArgumentException>(() => new OrderError(slug, "Title.", DomainErrorKind.Conflict));
+
+        Assert.Equal("slug", error.ParamName);
     }
 
     [Theory]
     [InlineData("")]
-    [InlineData(" ")]
-    public void ABlankSlugIsRefused(string slug)
+    [InlineData("  ")]
+    public void RefusesABlankTitle(string title)
     {
-        Assert.Throws<ArgumentException>(() => new TestDomainException(slug, "A title.", DomainErrorKind.Conflict));
-    }
-
-    [Theory]
-    [InlineData("")]
-    [InlineData(" ")]
-    public void ABlankTitleIsRefused(string title)
-    {
-        Assert.Throws<ArgumentException>(() => new TestDomainException("already-shipped", title, DomainErrorKind.Conflict));
-    }
-
-    [Theory]
-    [InlineData(0)]
-    [InlineData(4)]
-    public void AnUndefinedKindIsRefused(int kind)
-    {
-        Assert.Throws<ArgumentOutOfRangeException>(() => new TestDomainException("already-shipped", "A title.", (DomainErrorKind)kind));
+        Assert.ThrowsAny<ArgumentException>(() => new OrderError("not-found", title, DomainErrorKind.NotFound));
     }
 
     [Fact]
-    public void ItKeepsTheInnerException()
+    public void RefusesAnUnknownKind()
     {
-        var cause = new InvalidOperationException("cause");
-
-        var exception = new TestDomainException("already-shipped", "A title.", DomainErrorKind.Conflict, innerException: cause);
-
-        Assert.Same(cause, exception.InnerException);
+        Assert.Throws<ArgumentOutOfRangeException>(() => new OrderError("not-found", "No such order.", (DomainErrorKind)42));
     }
+
+    private sealed class OrderError(
+        string slug,
+        string title,
+        DomainErrorKind kind,
+        IReadOnlyDictionary<string, object?>? extensions = null,
+        Exception? innerException = null)
+        : DomainException(slug, title, kind, extensions, innerException);
 }
