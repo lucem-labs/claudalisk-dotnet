@@ -39,6 +39,11 @@ public static partial class JobsTable
 
     public static string DropSql(string schema) => $"DROP TABLE {Quote(schema)}.jobs;";
 
+    public static string CreatePruneIndexSql(string schema) =>
+        $"CREATE INDEX ix_jobs_finished ON {Quote(schema)}.jobs (finished_at) WHERE status IN ('succeeded', 'failed', 'canceled');";
+
+    public static string DropPruneIndexSql(string schema) => $"DROP INDEX {Quote(schema)}.ix_jobs_finished;";
+
     internal static string Channel(string schema) => $"claudalisk_jobs_{Identifier(schema)}";
 
     internal static string Quote(string schema) => $"\"{Identifier(schema)}\"";

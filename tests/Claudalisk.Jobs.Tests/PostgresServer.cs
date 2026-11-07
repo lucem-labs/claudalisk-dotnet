@@ -20,8 +20,8 @@ internal static class PostgresServer
         return new NpgsqlConnectionStringBuilder(admin) { Database = name }.ConnectionString;
     }
 
-    public static async Task<ServiceProvider> CreateAppAsync() =>
-        new ServiceCollection().AddTestApp(await CreateDatabaseAsync()).BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+    public static async Task<ServiceProvider> CreateAppAsync(Action<JobsOptions>? configure = null) =>
+        new ServiceCollection().AddTestApp(await CreateDatabaseAsync(), configure).BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 
     public static async Task StartOrExplainAsync(Func<Task> start)
     {

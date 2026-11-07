@@ -296,6 +296,73 @@ public sealed class JobsTests
     }
 
     [Fact]
+    public async Task ABatchThatWritesNothingRunsOutsideATransactionAndTheNextBatchWritesItsOutput()
+    {
+        await using var app = await PostgresServer.CreateAppAsync();
+        await PlacedOrderAsync(app);
+        var id = Guid.NewGuid();
+        var job = await EnqueueAsync(app, new ScoreOrdersCommand(id, CrashOnWrite: false, ChangeWhileComputing: false));
+
+        Assert.Equal(2, await Runner(app).RunUntilIdleAsync("Orders", cancellationToken: TestContext.Current.CancellationToken));
+
+        var done = (await JobAsync(app, "Orders", job.Id))!;
+        Assert.Equal((JobStatus.Succeeded, $"/api/orders/{id}"), (done.Status, done.ResultLink));
+        Assert.Equal("""{"orders":1,"computedInATransaction":false}""", done.Checkpoint!.Replace(" ", ""));
+        Assert.Equal(1, await CountAsync(app, $"orders.orders WHERE id = '{id}' AND reference = 'score-1'"));
+    }
+
+    [Fact]
+    public async Task ARetryAfterABatchThatWritesNothingResumesFromItsOutputWithoutComputingAgain()
+    {
+        await using var app = await PostgresServer.CreateAppAsync();
+        var id = Guid.NewGuid();
+        var job = await EnqueueAsync(app, new ScoreOrdersCommand(id, CrashOnWrite: true, ChangeWhileComputing: false));
+
+        Assert.True(await Runner(app).RunNextAsync("Orders", cancellationToken: TestContext.Current.CancellationToken));
+        var crashed = (await JobAsync(app, "Orders", job.Id))!;
+        Assert.Equal((JobStatus.Queued, 0.9), (crashed.Status, crashed.ProgressFraction));
+
+        Assert.True(await Runner(app).RunNextAsync("Orders", cancellationToken: TestContext.Current.CancellationToken));
+
+        Assert.Equal(JobStatus.Succeeded, (await JobAsync(app, "Orders", job.Id))!.Status);
+        Assert.Equal(1, app.GetRequiredService<Computations>().Of(id));
+        Assert.Equal(1, await CountAsync(app, $"orders.orders WHERE id = '{id}'"));
+    }
+
+    [Fact]
+    public async Task ABatchThatWritesNothingButChangesAnAggregateFailsWithoutSavingItsOutput()
+    {
+        await using var app = await PostgresServer.CreateAppAsync();
+        var job = await EnqueueAsync(app, new ScoreOrdersCommand(Guid.NewGuid(), CrashOnWrite: false, ChangeWhileComputing: true), new JobOptions(MaxAttempts: 1));
+
+        Assert.True(await Runner(app).RunNextAsync("Orders", cancellationToken: TestContext.Current.CancellationToken));
+
+        var failed = (await JobAsync(app, "Orders", job.Id))!;
+        Assert.Equal((JobStatus.Failed, "/problems/jobs/failed", null), (failed.Status, failed.LastError!.Type, failed.Checkpoint));
+        Assert.Equal(0, await CountAsync(app, "billing.jobs"));
+    }
+
+    [Fact(Timeout = 60_000)]
+    public async Task ACancelRequestReachesARunningJobWithoutWaitingForTheHeartbeat()
+    {
+        await using var app = await PostgresServer.CreateAppAsync(options =>
+        {
+            options.HeartbeatInterval = TimeSpan.FromHours(1);
+            options.CancelCheckInterval = TimeSpan.FromMilliseconds(20);
+        });
+        var key = Guid.NewGuid();
+        var job = await EnqueueAsync(app, new WaitCommand(key, 0.5));
+        var running = Runner(app).RunNextAsync("Orders", cancellationToken: TestContext.Current.CancellationToken);
+        await app.GetRequiredService<Signals>().For(key).Started.Task;
+
+        await app.GetRequiredService<IJobTransport>().RequestCancelAsync(Registry(app).Find("Orders")!, job.Id, TestContext.Current.CancellationToken);
+        await running;
+
+        var canceled = (await JobAsync(app, "Orders", job.Id))!;
+        Assert.Equal((JobStatus.Canceled, true), (canceled.Status, canceled.CancelRequested));
+    }
+
+    [Fact]
     public async Task ARolledBackChangeDeliversNoEvent()
     {
         await using var app = await PostgresServer.CreateAppAsync();
@@ -338,7 +405,7 @@ public sealed class JobsTests
         Assert.Equal(1, await CountAsync(app, "billing.jobs"));
         Assert.Equal(1, await CountAsync(app, "mail.jobs"));
         Assert.Equal(5, await Runner(app).RunUntilIdleAsync("Mail", cancellationToken: TestContext.Current.CancellationToken));
-        Assert.Equal(1, await Runner(app).RunUntilIdleAsync("Billing", cancellationToken: TestContext.Current.CancellationToken));
+        Assert.Equal(1, await Runner(app).RunUntilIdleAsync("Billing", "refunds", TestContext.Current.CancellationToken));
         Assert.Equal(1, await CountAsync(app, $"billing.refunds WHERE order_id = '{orderId}'"));
         Assert.Equal(1, await CountAsync(app, "billing.jobs WHERE status = 'succeeded'"));
         Assert.Equal(1, await CountAsync(app, "mail.jobs WHERE status = 'failed' AND attempts = 5"));

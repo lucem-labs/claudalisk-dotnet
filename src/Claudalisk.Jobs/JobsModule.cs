@@ -8,11 +8,12 @@ public enum JobKindType
     Command,
     Batch,
     Event,
+    Rebuild,
 }
 
-public sealed record JobKind(string Name, JobKindType Type, Type PayloadType, Type? HandlerType, Type? CheckpointType);
+public sealed record JobKind(string Name, JobKindType Type, Type PayloadType, Type? HandlerType, Type? CheckpointType, string? Lane = null, string? EventKind = null);
 
-public sealed record EventSubscription(string Module, string Kind, Type EventType, Type HandlerType);
+public sealed record EventSubscription(string Module, string Kind, Type EventType, Type HandlerType, string Lane = JobOptions.DefaultLane);
 
 public sealed partial class JobsModule
 {
@@ -40,6 +41,8 @@ public sealed partial class JobsModule
 
     public IReadOnlyDictionary<string, int> Lanes => _lanes;
 
+    public TimeSpan? Retention { get; private set; }
+
     public IReadOnlyDictionary<string, JobKind> Kinds => _kinds;
 
     public JobKind? KindFor(Type payloadType) =>
@@ -49,7 +52,18 @@ public sealed partial class JobsModule
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(lane);
         ArgumentOutOfRangeException.ThrowIfNegative(workers);
+        if (workers > 1 && _kinds.Values.FirstOrDefault(kind => kind.Type == JobKindType.Rebuild && kind.Lane == lane) is { } rebuild)
+        {
+            throw new InvalidOperationException($"Lane '{lane}' of module '{Name}' runs the rebuild '{rebuild.Name}', so it has one worker at most.");
+        }
+
         _lanes[lane] = workers;
+    }
+
+    internal void SetRetention(TimeSpan retention)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(retention, TimeSpan.Zero);
+        Retention = retention;
     }
 
     internal void AddKind(JobKind kind)
@@ -87,6 +101,12 @@ public sealed class ModuleJobsBuilder
         return this;
     }
 
+    public ModuleJobsBuilder Retention(TimeSpan retention)
+    {
+        Module.SetRetention(retention);
+        return this;
+    }
+
     public ModuleJobsBuilder Command<TCommand>(string kind)
         where TCommand : notnull
     {
@@ -104,12 +124,48 @@ public sealed class ModuleJobsBuilder
         return this;
     }
 
-    public ModuleJobsBuilder Subscribe<TEvent, THandler>(string kind)
+    public ModuleJobsBuilder Subscribe<TEvent, THandler>(string kind, string lane = JobOptions.DefaultLane)
         where TEvent : notnull
         where THandler : class, IEventHandler<TEvent>
     {
-        Module.AddKind(new JobKind(kind, JobKindType.Event, typeof(TEvent), typeof(THandler), null));
-        Registry.AddSubscription(new EventSubscription(Module.Name, kind, typeof(TEvent), typeof(THandler)));
+        if (!Module.Lanes.ContainsKey(lane))
+        {
+            throw new InvalidOperationException($"Module '{Module.Name}' has no job lane '{lane}'; add it with Lane(...) before Subscribe.");
+        }
+
+        if (Module.Kinds.Values.FirstOrDefault(candidate => candidate.Type == JobKindType.Rebuild && candidate.EventKind != kind
+                && Module.Kinds[candidate.EventKind!].PayloadType == typeof(TEvent)) is { } rebuild)
+        {
+            throw new InvalidOperationException(
+                $"The rebuild '{rebuild.Name}' of module '{Module.Name}' settles the deliveries of '{rebuild.EventKind}', so '{typeof(TEvent).Name}' has no other subscription there.");
+        }
+
+        Module.AddKind(new JobKind(kind, JobKindType.Event, typeof(TEvent), typeof(THandler), null, lane));
+        Registry.AddSubscription(new EventSubscription(Module.Name, kind, typeof(TEvent), typeof(THandler), lane));
+        _services.AddScoped<THandler>();
+        return this;
+    }
+
+    public ModuleJobsBuilder Rebuild<TCommand, TEvent, THandler>(string kind)
+        where TCommand : notnull
+        where TEvent : notnull
+        where THandler : class, IRebuildJobHandler<TCommand, TEvent>
+    {
+        var subscriptions = Module.Kinds.Values.Where(candidate => candidate.Type == JobKindType.Event && candidate.PayloadType == typeof(TEvent)).ToArray();
+        if (subscriptions.Length != 1)
+        {
+            throw new InvalidOperationException(
+                $"The rebuild '{kind}' needs exactly one subscription of module '{Module.Name}' to '{typeof(TEvent).Name}'; it has {subscriptions.Length}. Subscribe before Rebuild.");
+        }
+
+        var subscription = subscriptions[0];
+        if (Module.Lanes[subscription.Lane!] > 1)
+        {
+            throw new InvalidOperationException(
+                $"The rebuild '{kind}' runs on lane '{subscription.Lane}' of module '{Module.Name}', which needs one worker at most so the rebuild and the event's handler never run at once.");
+        }
+
+        Module.AddKind(new JobKind(kind, JobKindType.Rebuild, typeof(TCommand), typeof(THandler), null, subscription.Lane, subscription.Name));
         _services.AddScoped<THandler>();
         return this;
     }

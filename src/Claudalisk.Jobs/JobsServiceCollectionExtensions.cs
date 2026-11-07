@@ -36,10 +36,13 @@ public static class JobsServiceCollectionExtensions
         }
 
         Registry(services);
-        services.AddOptions<JobsOptions>();
+        services.AddOptions<JobsOptions>().Validate(
+            options => options.CancelCheckInterval > TimeSpan.Zero && options.PruneInterval > TimeSpan.Zero && options.FinishedJobRetention > TimeSpan.Zero,
+            "JobsOptions.CancelCheckInterval, PruneInterval and FinishedJobRetention must be positive.");
         services.TryAddScoped<JobContext>();
         services.TryAddScoped<IJobContext>(provider => provider.GetRequiredService<JobContext>());
         services.TryAddScoped<IJobQueue, JobQueue>();
+        services.TryAddScoped<IJobHistory, JobHistory>();
         services.TryAddScoped<AggregateTracker>();
         services.TryAddScoped<IAggregateTracker>(provider => provider.GetRequiredService<AggregateTracker>());
         services.TryAddScoped<EventPublisher>();

@@ -70,6 +70,49 @@ internal sealed class PostgreSqlJobWriter(IScopeConnection scope) : IJobWriter
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    public async Task<bool> DeleteFinishedAsync(JobsModule module, Guid id, CancellationToken cancellationToken)
+    {
+        await using var command = await CommandAsync(
+            $"DELETE FROM {JobsTable.Quote(module.Schema)}.jobs WHERE id = @id AND status IN ('succeeded', 'failed', 'canceled')", cancellationToken);
+        command.Parameters.AddWithValue("id", id);
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+    }
+
+    public async Task<IReadOnlyList<JobDelivery>> LockActiveAsync(JobsModule module, string kind, CancellationToken cancellationToken)
+    {
+        await using var command = await CommandAsync(
+            $"SELECT id, payload::text FROM {JobsTable.Quote(module.Schema)}.jobs WHERE kind = @kind AND status IN ('queued', 'running') ORDER BY created_at, id FOR UPDATE",
+            cancellationToken);
+        command.Parameters.AddWithValue("kind", kind);
+        var deliveries = new List<JobDelivery>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            deliveries.Add(new JobDelivery(reader.GetGuid(0), reader.GetString(1)));
+        }
+
+        return deliveries;
+    }
+
+    public async Task MarkSucceededAsync(JobsModule module, string kind, IReadOnlyCollection<Guid> ids, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(ids);
+        if (ids.Count == 0)
+        {
+            return;
+        }
+
+        await using var command = await CommandAsync(
+            $"""
+            UPDATE {JobsTable.Quote(module.Schema)}.jobs
+            SET status = 'succeeded', started_at = coalesce(started_at, now()), finished_at = now(), heartbeat_at = NULL, progress_fraction = 1
+            WHERE id = ANY(@ids) AND kind = @kind AND status IN ('queued', 'running')
+            """, cancellationToken);
+        command.Parameters.AddWithValue("ids", ids.ToArray());
+        command.Parameters.AddWithValue("kind", kind);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     private async Task<NpgsqlCommand> CommandAsync(string sql, CancellationToken cancellationToken)
     {
         if (scope.Connection.State != ConnectionState.Open)

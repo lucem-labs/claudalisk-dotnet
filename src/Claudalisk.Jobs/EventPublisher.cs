@@ -23,6 +23,8 @@ internal sealed class AggregateTracker : IAggregateTracker
         return events;
     }
 
+    public bool HasTracked => _aggregates.Count > 0;
+
     public void Forget() => _aggregates.Clear();
 }
 
@@ -36,7 +38,7 @@ internal sealed class EventPublisher(JobsRegistry registry, IJobWriter writer, A
             var module = registry.Find(subscription.Module)!;
             await writer.InsertAsync(
                 module,
-                new NewJob(subscription.Kind, JsonSerializer.Serialize(integrationEvent, integrationEvent.GetType(), JobQueue.Json), new JobOptions()),
+                new NewJob(subscription.Kind, JsonSerializer.Serialize(integrationEvent, integrationEvent.GetType(), JobQueue.Json), new JobOptions(Lane: subscription.Lane)),
                 cancellationToken);
         }
     }

@@ -42,6 +42,12 @@ internal sealed record ImportCheckpoint(int Done);
 
 internal sealed record OrderWasCanceled(Guid OrderId) : IDomainEvent;
 
+internal sealed record ScoreOrdersCommand(Guid Id, bool CrashOnWrite, bool ChangeWhileComputing);
+
+internal sealed record ScoreCheckpoint(long Orders, bool ComputedInATransaction);
+
+internal sealed record RebuildRefundsCommand(Guid Id, bool FailAfterRebuild = false);
+
 internal sealed class OrderRow
 {
     public Guid Id { get; set; }
@@ -92,6 +98,27 @@ internal sealed class Order(Guid id, long version) : AggregateRoot(version)
     public Guid Id { get; } = id;
 
     public void Cancel() => Record(new OrderWasCanceled(Id));
+}
+
+public sealed class Computations
+{
+    private readonly Dictionary<Guid, int> _counts = [];
+
+    public int Of(Guid id)
+    {
+        lock (_counts)
+        {
+            return _counts.GetValueOrDefault(id);
+        }
+    }
+
+    public void Add(Guid id)
+    {
+        lock (_counts)
+        {
+            _counts[id] = _counts.GetValueOrDefault(id) + 1;
+        }
+    }
 }
 
 public sealed class Signals
@@ -231,12 +258,63 @@ internal sealed class ImportOrdersHandler(OrdersDbContext db, IJobContext job) :
     }
 }
 
+internal sealed class ScoreOrdersHandler(OrdersDbContext db, IScopeConnection connection, IAggregateTracker tracker, IJobContext job, Computations computations)
+    : IBatchJobHandler<ScoreOrdersCommand, ScoreCheckpoint>
+{
+    public bool WritesNothing(ScoreOrdersCommand command, ScoreCheckpoint? checkpoint) => checkpoint is null;
+
+    public async Task<BatchStep<ScoreCheckpoint>> RunBatchAsync(ScoreOrdersCommand command, ScoreCheckpoint? checkpoint, CancellationToken cancellationToken)
+    {
+        if (checkpoint is null)
+        {
+            computations.Add(command.Id);
+            var orders = await db.Orders.LongCountAsync(cancellationToken);
+            if (command.ChangeWhileComputing)
+            {
+                var order = new Order(Guid.NewGuid(), 1);
+                order.Cancel();
+                tracker.Track(order);
+            }
+
+            return new BatchStep<ScoreCheckpoint>(new ScoreCheckpoint(orders, connection.Transaction is not null), Done: false, Progress: 0.9);
+        }
+
+        if (command.CrashOnWrite && job.Attempt == 1)
+        {
+            throw new InvalidOperationException("Writing the score crashed.");
+        }
+
+        db.Orders.Add(new OrderRow { Id = command.Id, Reference = $"score-{checkpoint.Orders}" });
+        await db.SaveChangesAsync(cancellationToken);
+        job.SetResult($"/api/orders/{command.Id}");
+        return new BatchStep<ScoreCheckpoint>(checkpoint, Done: true, Progress: 1);
+    }
+}
+
 internal sealed class RefundOnOrderCanceledHandler(BillingDbContext db) : IEventHandler<OrderCanceled>
 {
     public async Task HandleAsync(OrderCanceled integrationEvent, CancellationToken cancellationToken)
     {
         db.Refunds.Add(new RefundRow { Id = Guid.NewGuid(), OrderId = integrationEvent.OrderId });
         await db.SaveChangesAsync(cancellationToken);
+    }
+}
+
+internal sealed class RebuildRefundsHandler(BillingDbContext db) : IRebuildJobHandler<RebuildRefundsCommand, OrderCanceled>
+{
+    public async Task<Func<OrderCanceled, bool>> RebuildAsync(RebuildRefundsCommand command, CancellationToken cancellationToken)
+    {
+        var canceled = await db.Database.SqlQueryRaw<Guid>("SELECT id AS \"Value\" FROM orders.orders WHERE canceled").ToListAsync(cancellationToken);
+        await db.Refunds.ExecuteDeleteAsync(cancellationToken);
+        db.Refunds.AddRange(canceled.Select(orderId => new RefundRow { Id = Guid.NewGuid(), OrderId = orderId }));
+        await db.SaveChangesAsync(cancellationToken);
+        if (command.FailAfterRebuild)
+        {
+            throw new InvalidOperationException("The rebuild failed after it rewrote the read model.");
+        }
+
+        var included = canceled.ToHashSet();
+        return delivery => included.Contains(delivery.OrderId);
     }
 }
 
@@ -255,6 +333,7 @@ public sealed class OrdersModule : IModule
         services.AddModuleDbContext<OrdersDbContext>("orders");
         services.AddModuleJobs("Orders", "orders", jobs => jobs
             .Lane("slow", 1)
+            .Retention(TimeSpan.FromDays(7))
             .Command<ShipOrderCommand>("ship-order")
             .Command<FlakyCommand>("flaky")
             .Command<StrictCommand>("strict")
@@ -262,6 +341,7 @@ public sealed class OrdersModule : IModule
             .Command<OutageCommand>("outage")
             .Command<WaitCommand>("wait")
             .Batch<ImportOrdersCommand, ImportCheckpoint, ImportOrdersHandler>("import-orders")
+            .Batch<ScoreOrdersCommand, ScoreCheckpoint, ScoreOrdersHandler>("score-orders")
             .MapEvent<OrderWasCanceled>(canceled => new OrderCanceled(canceled.OrderId)));
     }
 }
@@ -275,7 +355,10 @@ public sealed class BillingModule : IModule
     public void ConfigureServices(IServiceCollection services, IConfiguration configuration)
     {
         services.AddModuleDbContext<BillingDbContext>("billing");
-        services.AddModuleJobs("Billing", "billing", jobs => jobs.Subscribe<OrderCanceled, RefundOnOrderCanceledHandler>("refund-on-order-canceled"));
+        services.AddModuleJobs("Billing", "billing", jobs => jobs
+            .Lane("refunds", 1)
+            .Subscribe<OrderCanceled, RefundOnOrderCanceledHandler>("refund-on-order-canceled", "refunds")
+            .Rebuild<RebuildRefundsCommand, OrderCanceled, RebuildRefundsHandler>("rebuild-refunds"));
     }
 }
 
@@ -294,7 +377,7 @@ public sealed class MailModule : IModule
 
 internal static class TestApp
 {
-    public static IServiceCollection AddTestApp(this IServiceCollection services, string connectionString)
+    public static IServiceCollection AddTestApp(this IServiceCollection services, string connectionString, Action<JobsOptions>? configure = null)
     {
         services.AddLogging();
         services.AddPersistence(connectionString);
@@ -306,8 +389,14 @@ internal static class TestApp
             options.RetryBaseDelay = TimeSpan.Zero;
             options.HeartbeatInterval = TimeSpan.FromMilliseconds(20);
         });
+        if (configure is not null)
+        {
+            services.Configure(configure);
+        }
+
         services.AddPostgreSqlJobs();
         services.AddSingleton<Signals>();
+        services.AddSingleton<Computations>();
         return services;
     }
 }

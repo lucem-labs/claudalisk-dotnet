@@ -43,6 +43,14 @@ public sealed record ClaimedJob(Guid Id, string Kind, string Payload, int Attemp
 public sealed record BatchStep<TCheckpoint>(TCheckpoint Checkpoint, bool Done, double? Progress = null)
     where TCheckpoint : class;
 
+public sealed record JobRun(JobRecord Job, string Payload);
+
+public sealed record JobDelivery(Guid Id, string Payload);
+
+public sealed record JobHistoryQuery(string? Kind = null, IReadOnlyCollection<JobStatus>? Statuses = null, int Page = 1, int PageSize = 50);
+
+public sealed record JobHistoryPage(IReadOnlyList<JobRun> Runs, int Total);
+
 public interface IJobQueue
 {
     Task<Claudalisk.Dispatching.JobReference> EnqueueAsync(object command, JobOptions? options = null, CancellationToken cancellationToken = default);
@@ -65,6 +73,13 @@ public interface IBatchJobHandler<in TCommand, TCheckpoint>
     where TCheckpoint : class
 {
     Task<BatchStep<TCheckpoint>> RunBatchAsync(TCommand command, TCheckpoint? checkpoint, CancellationToken cancellationToken);
+
+    bool WritesNothing(TCommand command, TCheckpoint? checkpoint) => false;
+}
+
+public interface IRebuildJobHandler<in TCommand, TEvent>
+{
+    Task<Func<TEvent, bool>> RebuildAsync(TCommand command, CancellationToken cancellationToken);
 }
 
 public interface IEventHandler<in TEvent>
@@ -75,6 +90,13 @@ public interface IEventHandler<in TEvent>
 public interface IAggregateTracker
 {
     void Track(Claudalisk.Domain.AggregateRoot aggregate);
+}
+
+public interface IJobHistory
+{
+    Task<JobHistoryPage> ListAsync(string module, JobHistoryQuery query, CancellationToken cancellationToken = default);
+
+    Task<bool> DeleteFinishedAsync(string module, Guid id, CancellationToken cancellationToken = default);
 }
 
 public interface IEventPublisher
@@ -90,6 +112,8 @@ public interface IJobTransport
 
     Task<bool> HeartbeatAsync(JobsModule module, Guid id, CancellationToken cancellationToken);
 
+    Task<bool> IsCancelRequestedAsync(JobsModule module, Guid id, CancellationToken cancellationToken);
+
     Task ReportProgressAsync(JobsModule module, Guid id, double fraction, string? step, CancellationToken cancellationToken);
 
     Task RetryOrFailAsync(JobsModule module, Guid id, JobError error, TimeSpan? retryAfter, CancellationToken cancellationToken);
@@ -101,6 +125,10 @@ public interface IJobTransport
     Task<JobRecord?> GetAsync(JobsModule module, Guid id, CancellationToken cancellationToken);
 
     Task<JobRecord?> RequestCancelAsync(JobsModule module, Guid id, CancellationToken cancellationToken);
+
+    Task<JobHistoryPage> ListAsync(JobsModule module, JobHistoryQuery query, CancellationToken cancellationToken);
+
+    Task<int> DeleteFinishedBeforeAsync(JobsModule module, TimeSpan retention, CancellationToken cancellationToken);
 }
 
 public interface IJobWriter
@@ -110,4 +138,10 @@ public interface IJobWriter
     Task CompleteAsync(JobsModule module, Guid id, string? resultLink, CancellationToken cancellationToken);
 
     Task SaveCheckpointAsync(JobsModule module, Guid id, string checkpoint, double? progress, CancellationToken cancellationToken);
+
+    Task<bool> DeleteFinishedAsync(JobsModule module, Guid id, CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<JobDelivery>> LockActiveAsync(JobsModule module, string kind, CancellationToken cancellationToken);
+
+    Task MarkSucceededAsync(JobsModule module, string kind, IReadOnlyCollection<Guid> ids, CancellationToken cancellationToken);
 }

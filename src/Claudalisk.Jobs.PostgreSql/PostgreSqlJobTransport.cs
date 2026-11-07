@@ -97,6 +97,14 @@ internal sealed class PostgreSqlJobTransport(NpgsqlDataSource dataSource) : IJob
         return await command.ExecuteScalarAsync(cancellationToken) is true;
     }
 
+    public async Task<bool> IsCancelRequestedAsync(JobsModule module, Guid id, CancellationToken cancellationToken)
+    {
+        await using var command = dataSource.CreateCommand(
+            $"SELECT cancel_requested FROM {JobsTable.Quote(module.Schema)}.jobs WHERE id = @id AND status = 'running'");
+        command.Parameters.AddWithValue("id", id);
+        return await command.ExecuteScalarAsync(cancellationToken) is true;
+    }
+
     public async Task ReportProgressAsync(JobsModule module, Guid id, double fraction, string? step, CancellationToken cancellationToken)
     {
         await using var command = dataSource.CreateCommand(
@@ -165,21 +173,63 @@ internal sealed class PostgreSqlJobTransport(NpgsqlDataSource dataSource) : IJob
         return await ReadOneAsync(command, cancellationToken);
     }
 
+    public async Task<JobHistoryPage> ListAsync(JobsModule module, JobHistoryQuery query, CancellationToken cancellationToken)
+    {
+        var filter = $"FROM {JobsTable.Quote(module.Schema)}.jobs WHERE (@kind IS NULL OR kind = @kind) AND (@statuses IS NULL OR status = ANY(@statuses))";
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var count = new NpgsqlCommand($"SELECT count(*) {filter}", connection);
+        AddFilter(count, query);
+        var total = Convert.ToInt32(await count.ExecuteScalarAsync(cancellationToken), System.Globalization.CultureInfo.InvariantCulture);
+        await using var page = new NpgsqlCommand(
+            $"SELECT {Columns}, payload::text {filter} ORDER BY created_at DESC, id DESC OFFSET @offset LIMIT @limit", connection);
+        AddFilter(page, query);
+        page.Parameters.AddWithValue("offset", (long)(query.Page - 1) * query.PageSize);
+        page.Parameters.AddWithValue("limit", query.PageSize);
+        var runs = new List<JobRun>();
+        await using (var reader = await page.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                runs.Add(new JobRun(Read(reader), reader.GetString(18)));
+            }
+        }
+
+        return new JobHistoryPage(runs, total);
+    }
+
+    public async Task<int> DeleteFinishedBeforeAsync(JobsModule module, TimeSpan retention, CancellationToken cancellationToken)
+    {
+        await using var command = dataSource.CreateCommand(
+            $"DELETE FROM {JobsTable.Quote(module.Schema)}.jobs WHERE status IN ('succeeded', 'failed', 'canceled') AND finished_at < now() - @retention");
+        command.Parameters.AddWithValue("retention", retention);
+        return await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     internal async Task NotifyAsync(JobsModule module, CancellationToken cancellationToken)
     {
         await using var command = dataSource.CreateCommand($"SELECT pg_notify('{JobsTable.Channel(module.Schema)}', '')");
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    private static void AddFilter(NpgsqlCommand command, JobHistoryQuery query)
+    {
+        command.Parameters.Add(new NpgsqlParameter("kind", NpgsqlDbType.Text) { Value = (object?)query.Kind ?? DBNull.Value });
+        command.Parameters.Add(new NpgsqlParameter("statuses", NpgsqlDbType.Array | NpgsqlDbType.Text)
+        {
+            Value = query.Statuses is { Count: > 0 } statuses
+                ? statuses.Select(status => status.ToString().ToLowerInvariant()).ToArray()
+                : DBNull.Value,
+        });
+    }
+
     private static async Task<JobRecord?> ReadOneAsync(NpgsqlCommand command, CancellationToken cancellationToken)
     {
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken))
-        {
-            return null;
-        }
+        return await reader.ReadAsync(cancellationToken) ? Read(reader) : null;
+    }
 
-        return new JobRecord(
+    private static JobRecord Read(NpgsqlDataReader reader) =>
+        new(
             reader.GetGuid(0),
             reader.GetString(1),
             reader.GetString(2),
@@ -198,5 +248,4 @@ internal sealed class PostgreSqlJobTransport(NpgsqlDataSource dataSource) : IJob
             reader.IsDBNull(15) ? null : reader.GetFieldValue<DateTimeOffset>(15),
             reader.IsDBNull(16) ? null : reader.GetFieldValue<DateTimeOffset>(16),
             reader.IsDBNull(17) ? null : reader.GetFieldValue<DateTimeOffset>(17));
-    }
 }
