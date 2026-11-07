@@ -114,7 +114,7 @@ public sealed partial class JobRunner
                 LogJobFailed(_logger, exception, module.Name, claimed.Id, claimed.Kind, claimed.Attempts);
             }
 
-            await _transport.RetryOrFailAsync(module, claimed.Id, error, retry ? Backoff(claimed.Attempts) : null, CancellationToken.None);
+            await _transport.RetryOrFailAsync(module, claimed.Id, error, retry ? RetryDelay(exception, claimed.Attempts) : null, CancellationToken.None);
         }
         finally
         {
@@ -182,6 +182,12 @@ public sealed partial class JobRunner
         }
     }
 
+    private TimeSpan RetryDelay(Exception exception, int attempt)
+    {
+        var backoff = Backoff(attempt);
+        return exception is DependencyUnavailableException { RetryAfter: { } wait } && wait > backoff ? wait : backoff;
+    }
+
     private TimeSpan Backoff(int attempt)
     {
         var exponential = _options.RetryBaseDelay * Math.Pow(2, Math.Max(0, attempt - 1));
@@ -196,6 +202,7 @@ public sealed partial class JobRunner
     {
         DomainException domain => new JobError($"/problems/{Claudalisk.AspNetCore.NameSegments.Kebab(module.Name)}/{domain.Slug}", domain.Title, domain.Title),
         MessageValidationException validation => new JobError("/problems/jobs/invalid", "The job's input is not valid.", validation.Message),
+        DependencyUnavailableException => new JobError("/problems/dependency-unavailable", "A service this job needs is unavailable.", null),
         _ => new JobError(UnexpectedError, "The job failed.", null),
     };
 

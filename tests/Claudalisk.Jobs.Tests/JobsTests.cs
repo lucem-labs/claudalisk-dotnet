@@ -163,6 +163,33 @@ public sealed class JobsTests
     }
 
     [Fact]
+    public async Task AnUnavailableDependencyIsRetriedNoSoonerThanTheWaitItCarries()
+    {
+        await using var app = await PostgresServer.CreateAppAsync();
+        var job = await EnqueueAsync(app, new OutageCommand(WaitMinutes: 60));
+
+        Assert.True(await Runner(app).RunNextAsync("Orders", cancellationToken: TestContext.Current.CancellationToken));
+
+        var waiting = (await JobAsync(app, "Orders", job.Id))!;
+        Assert.Equal((JobStatus.Queued, 1, "/problems/dependency-unavailable"), (waiting.Status, waiting.Attempts, waiting.LastError!.Type));
+        Assert.True(waiting.NotBefore >= waiting.StartedAt + TimeSpan.FromMinutes(60));
+        Assert.False(await Runner(app).RunNextAsync("Orders", cancellationToken: TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task AnUnavailableDependencyWithNoWaitIsRetriedWithBackoffUntilItsAttemptsRunOut()
+    {
+        await using var app = await PostgresServer.CreateAppAsync();
+        var job = await EnqueueAsync(app, new OutageCommand(WaitMinutes: 0), new JobOptions(MaxAttempts: 3));
+
+        Assert.Equal(3, await Runner(app).RunUntilIdleAsync("Orders", cancellationToken: TestContext.Current.CancellationToken));
+
+        var failed = (await JobAsync(app, "Orders", job.Id))!;
+        Assert.Equal((JobStatus.Failed, 3, "/problems/dependency-unavailable", "A service this job needs is unavailable."),
+            (failed.Status, failed.Attempts, failed.LastError!.Type, failed.LastError.Title));
+    }
+
+    [Fact]
     public async Task AJobWhoseHeartbeatWentStaleGoesBackInTheQueue()
     {
         await using var app = await PostgresServer.CreateAppAsync();

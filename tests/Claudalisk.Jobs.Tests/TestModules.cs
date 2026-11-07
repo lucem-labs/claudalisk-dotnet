@@ -26,6 +26,8 @@ public sealed record StrictCommand(string Reference);
 
 public sealed record RefusedCommand(string Reference);
 
+public sealed record OutageCommand(int WaitMinutes);
+
 public sealed class OrderRefused() : DomainException("order-refused", "The order is refused.", DomainErrorKind.Conflict);
 
 public sealed record WaitCommand(Guid Key, double Progress);
@@ -157,6 +159,14 @@ internal sealed class RefusedHandler : IHandler<RefusedCommand, int>
     public Task<int> HandleAsync(RefusedCommand message, CancellationToken cancellationToken) => throw new OrderRefused();
 }
 
+internal sealed class OutageHandler : IHandler<OutageCommand, int>
+{
+    public Task<int> HandleAsync(OutageCommand message, CancellationToken cancellationToken) =>
+        throw new DependencyUnavailableException(
+            "The carrier's API is down.",
+            message.WaitMinutes > 0 ? TimeSpan.FromMinutes(message.WaitMinutes) : null);
+}
+
 internal sealed class StrictCommandValidator : AbstractValidator<StrictCommand>
 {
     public StrictCommandValidator() => RuleFor(command => command.Reference).NotEmpty();
@@ -249,6 +259,7 @@ public sealed class OrdersModule : IModule
             .Command<FlakyCommand>("flaky")
             .Command<StrictCommand>("strict")
             .Command<RefusedCommand>("refused")
+            .Command<OutageCommand>("outage")
             .Command<WaitCommand>("wait")
             .Batch<ImportOrdersCommand, ImportCheckpoint, ImportOrdersHandler>("import-orders")
             .MapEvent<OrderWasCanceled>(canceled => new OrderCanceled(canceled.OrderId)));
