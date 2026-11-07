@@ -133,6 +133,13 @@ public sealed class ModuleJobsBuilder
             throw new InvalidOperationException($"Module '{Module.Name}' has no job lane '{lane}'; add it with Lane(...) before Subscribe.");
         }
 
+        if (Module.Kinds.Values.FirstOrDefault(candidate => candidate.Type == JobKindType.Rebuild && candidate.EventKind != kind
+                && Module.Kinds[candidate.EventKind!].PayloadType == typeof(TEvent)) is { } rebuild)
+        {
+            throw new InvalidOperationException(
+                $"The rebuild '{rebuild.Name}' of module '{Module.Name}' settles the deliveries of '{rebuild.EventKind}', so '{typeof(TEvent).Name}' has no other subscription there.");
+        }
+
         Module.AddKind(new JobKind(kind, JobKindType.Event, typeof(TEvent), typeof(THandler), null, lane));
         Registry.AddSubscription(new EventSubscription(Module.Name, kind, typeof(TEvent), typeof(THandler), lane));
         _services.AddScoped<THandler>();

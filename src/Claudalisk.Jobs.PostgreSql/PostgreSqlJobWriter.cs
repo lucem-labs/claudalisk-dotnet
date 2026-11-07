@@ -94,7 +94,7 @@ internal sealed class PostgreSqlJobWriter(IScopeConnection scope) : IJobWriter
         return deliveries;
     }
 
-    public async Task MarkSucceededAsync(JobsModule module, IReadOnlyCollection<Guid> ids, CancellationToken cancellationToken)
+    public async Task MarkSucceededAsync(JobsModule module, string kind, IReadOnlyCollection<Guid> ids, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(ids);
         if (ids.Count == 0)
@@ -105,10 +105,11 @@ internal sealed class PostgreSqlJobWriter(IScopeConnection scope) : IJobWriter
         await using var command = await CommandAsync(
             $"""
             UPDATE {JobsTable.Quote(module.Schema)}.jobs
-            SET status = 'succeeded', finished_at = now(), heartbeat_at = NULL, progress_fraction = 1
-            WHERE id = ANY(@ids) AND status IN ('queued', 'running')
+            SET status = 'succeeded', started_at = coalesce(started_at, now()), finished_at = now(), heartbeat_at = NULL, progress_fraction = 1
+            WHERE id = ANY(@ids) AND kind = @kind AND status IN ('queued', 'running')
             """, cancellationToken);
         command.Parameters.AddWithValue("ids", ids.ToArray());
+        command.Parameters.AddWithValue("kind", kind);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 

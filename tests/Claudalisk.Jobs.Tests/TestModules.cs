@@ -46,7 +46,7 @@ internal sealed record ScoreOrdersCommand(Guid Id, bool CrashOnWrite, bool Chang
 
 internal sealed record ScoreCheckpoint(long Orders, bool ComputedInATransaction);
 
-internal sealed record RebuildRefundsCommand(Guid Id);
+internal sealed record RebuildRefundsCommand(Guid Id, bool FailAfterRebuild = false);
 
 internal sealed class OrderRow
 {
@@ -308,6 +308,11 @@ internal sealed class RebuildRefundsHandler(BillingDbContext db) : IRebuildJobHa
         await db.Refunds.ExecuteDeleteAsync(cancellationToken);
         db.Refunds.AddRange(canceled.Select(orderId => new RefundRow { Id = Guid.NewGuid(), OrderId = orderId }));
         await db.SaveChangesAsync(cancellationToken);
+        if (command.FailAfterRebuild)
+        {
+            throw new InvalidOperationException("The rebuild failed after it rewrote the read model.");
+        }
+
         var included = canceled.ToHashSet();
         return delivery => included.Contains(delivery.OrderId);
     }

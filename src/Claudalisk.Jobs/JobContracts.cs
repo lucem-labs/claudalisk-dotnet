@@ -143,5 +143,5 @@ public interface IJobWriter
 
     Task<IReadOnlyList<JobDelivery>> LockActiveAsync(JobsModule module, string kind, CancellationToken cancellationToken);
 
-    Task MarkSucceededAsync(JobsModule module, IReadOnlyCollection<Guid> ids, CancellationToken cancellationToken);
+    Task MarkSucceededAsync(JobsModule module, string kind, IReadOnlyCollection<Guid> ids, CancellationToken cancellationToken);
 }

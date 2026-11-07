@@ -52,6 +52,33 @@ public sealed class RebuildTests
     }
 
     [Fact]
+    public async Task AFailedRebuildLeavesTheReadModelAndTheDeliveriesAsTheyWere()
+    {
+        await using var app = await PostgresServer.CreateAppAsync();
+        var orderId = await CanceledOrderAsync(app);
+        await ScalarAsync(app, "UPDATE billing.jobs SET not_before = now() + interval '1 hour' WHERE status = 'queued'");
+        var rebuild = await EnqueueAsync(app, new RebuildRefundsCommand(Guid.NewGuid(), FailAfterRebuild: true), new JobOptions(MaxAttempts: 1));
+
+        Assert.Equal(1, await Runner(app).RunUntilIdleAsync("Billing", "refunds", TestContext.Current.CancellationToken));
+
+        Assert.Equal(JobStatus.Failed, (await JobAsync(app, "Billing", rebuild.Id))!.Status);
+        Assert.Equal<(Guid, string)>([(orderId, "queued")], await DeliveriesAsync(app));
+        Assert.Equal(0L, await ScalarAsync(app, "SELECT count(*) FROM billing.refunds"));
+    }
+
+    [Fact]
+    public void ARebuiltEventHasNoOtherSubscriptionInItsModule()
+    {
+        var failure = Assert.Throws<InvalidOperationException>(() => new ServiceCollection().AddModuleJobs("Audit", "audit", jobs => jobs
+            .Subscribe<OrderCanceled, RefundOnOrderCanceledHandler>("audit-order-canceled")
+            .Rebuild<RebuildRefundsCommand, OrderCanceled, RebuildRefundsHandler>("rebuild-audit")
+            .Subscribe<OrderCanceled, RefundOnOrderCanceledHandler>("audit-order-canceled")
+            .Subscribe<OrderCanceled, RefundOnOrderCanceledHandler>("audit-order-canceled-again")));
+
+        Assert.Contains("has no other subscription there", failure.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task ARebuildRunsOnlyOnItsSubscriptionsLane()
     {
         await using var app = await PostgresServer.CreateAppAsync();

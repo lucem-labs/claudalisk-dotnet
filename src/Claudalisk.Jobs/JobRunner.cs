@@ -206,7 +206,7 @@ public sealed partial class JobRunner
                 .Where(delivery => includes(JsonSerializer.Deserialize<TEvent>(delivery.Payload, JobQueue.Json)!))
                 .Select(delivery => delivery.Id)
                 .ToArray();
-            await writer.MarkSucceededAsync(context.JobsModule, included, token);
+            await writer.MarkSucceededAsync(context.JobsModule, kind.EventKind!, included, token);
             await publisher.PublishTrackedAsync(token);
             await writer.CompleteAsync(context.JobsModule, context.JobId, context.ResultLink, token);
         }, cancellationToken);
