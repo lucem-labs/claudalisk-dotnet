@@ -9,6 +9,8 @@ public sealed class DatabaseInitializer(IServiceProvider services, IEnumerable<M
 
     public async Task MigrateAsync(CancellationToken cancellationToken)
     {
+        await services.GetRequiredService<MigrationHistoryMoves>().MoveAsync(cancellationToken);
+        await services.GetRequiredService<MigrationBaselines>().AdoptAsync(cancellationToken);
         foreach (var registration in Contexts)
         {
             await Context(registration).Database.MigrateAsync(cancellationToken);

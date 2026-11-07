@@ -19,6 +19,45 @@ public static class PersistenceServiceCollectionExtensions
         services.TryAddScoped<IScopeConnection>(provider => provider.GetRequiredService<DbSession>());
         services.TryAddScoped<IUnitOfWork, UnitOfWork>();
         services.TryAddScoped<DatabaseInitializer>();
+        services.TryAddScoped<MigrationBaselines>();
+        services.TryAddScoped<MigrationHistoryMoves>();
+        return services;
+    }
+
+    public static IServiceCollection AddMigrationBaseline(this IServiceCollection services, string schema, string migration, IReadOnlyList<string> replaces)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentException.ThrowIfNullOrWhiteSpace(schema);
+        ArgumentException.ThrowIfNullOrWhiteSpace(migration);
+        ArgumentNullException.ThrowIfNull(replaces);
+        if (replaces.Count == 0)
+        {
+            throw new ArgumentException("A baseline replaces at least one migration.", nameof(replaces));
+        }
+
+        if (!services.Any(descriptor => descriptor.ImplementationInstance is MigrationBaseline existing && existing.Schema == schema))
+        {
+            services.AddSingleton(new MigrationBaseline(schema, migration, [.. replaces]));
+        }
+
+        return services;
+    }
+
+    public static IServiceCollection AddMovedMigrationHistory(this IServiceCollection services, string from, string to)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        MigrationHistoryMoves.Quote(from);
+        MigrationHistoryMoves.Quote(to);
+        if (from == to)
+        {
+            throw new ArgumentException("A migration history moves to another schema.", nameof(to));
+        }
+
+        if (!services.Any(descriptor => descriptor.ImplementationInstance is MovedMigrationHistory existing && existing.To == to))
+        {
+            services.AddSingleton(new MovedMigrationHistory(from, to));
+        }
+
         return services;
     }
 
