@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>Claudalisk.AspNetCore</PackageId>
+    <Description>What every Host needs: one Problem Details handler, conditional writes, HAL members, the health endpoint and module tags in the OpenAPI document.</Description>
+    <PackageTags>claudalisk;aspnetcore;problem-details;openapi;hal;etag;health;modular-monolith</PackageTags>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <InternalsVisibleTo Include="Claudalisk.AspNetCore.Tests" />
+    <ProjectReference Include="..\Claudalisk.Dispatching.Abstractions\Claudalisk.Dispatching.Abstractions.csproj" />
+    <ProjectReference Include="..\Claudalisk.Domain\Claudalisk.Domain.csproj" />
+    <ProjectReference Include="..\Claudalisk.Modules\Claudalisk.Modules.csproj" />
+    <ProjectReference Include="..\Claudalisk.Persistence.Abstractions\Claudalisk.Persistence.Abstractions.csproj" />
+  </ItemGroup>
+</Project>
