@@ -71,7 +71,7 @@ public sealed class JobWorkersTests
     }
 
     [Fact]
-    public async Task A_worker_whose_transport_keeps_failing_retries_after_the_poll_interval_and_stops_cleanly()
+    public async Task AWorkerWhoseTransportKeepsFailingRetriesAfterThePollIntervalAndStopsCleanly()
     {
         var transport = new FailingTransport();
         var services = new ServiceCollection();
@@ -83,15 +83,15 @@ public sealed class JobWorkersTests
         await using var provider = services.BuildServiceProvider();
         var workers = provider.GetServices<IHostedService>().OfType<BackgroundService>().Single();
 
-        await workers.StartAsync(default);
+        await workers.StartAsync(TestContext.Current.CancellationToken);
         await Task.WhenAny(transport.SecondClaim.Task, workers.ExecuteTask!);
-        await workers.StopAsync(default);
+        await workers.StopAsync(TestContext.Current.CancellationToken);
 
         Assert.True(workers.ExecuteTask!.IsCompletedSuccessfully);
     }
 
     [Fact]
-    public async Task A_worker_whose_claim_fails_after_the_host_starts_stopping_stops_cleanly()
+    public async Task AWorkerWhoseClaimFailsAfterTheHostStartsStoppingStopsCleanly()
     {
         var transport = new FailingAtShutdownTransport();
         var services = new ServiceCollection();
@@ -103,9 +103,9 @@ public sealed class JobWorkersTests
         await using var provider = services.BuildServiceProvider();
         var workers = provider.GetServices<IHostedService>().OfType<BackgroundService>().Single();
 
-        await workers.StartAsync(default);
+        await workers.StartAsync(TestContext.Current.CancellationToken);
         await transport.Claimed.Task;
-        await workers.StopAsync(default);
+        await workers.StopAsync(TestContext.Current.CancellationToken);
 
         Assert.True(workers.ExecuteTask!.IsCompletedSuccessfully);
     }

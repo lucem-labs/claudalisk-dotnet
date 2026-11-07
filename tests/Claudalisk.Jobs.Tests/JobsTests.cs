@@ -9,7 +9,7 @@ namespace Claudalisk.Jobs.Tests;
 public sealed class JobsTests
 {
     [Fact]
-    public async Task A_job_commits_with_the_data_that_queued_it()
+    public async Task AJobCommitsWithTheDataThatQueuedIt()
     {
         await using var app = await PostgresServer.CreateAppAsync();
         var orderId = Guid.NewGuid();
@@ -22,22 +22,22 @@ public sealed class JobsTests
     }
 
     [Fact]
-    public async Task A_worker_about_to_wait_sees_a_job_queued_in_its_lane_so_it_does_not_miss_its_notify()
+    public async Task AWorkerAboutToWaitSeesAJobQueuedInItsLaneSoItDoesNotMissItsNotify()
     {
         await using var app = await PostgresServer.CreateAppAsync();
         var transport = (PostgreSql.PostgreSqlJobTransport)app.GetRequiredService<IJobTransport>();
         var orders = Registry(app).Find("Orders")!;
-        var before = await transport.HasQueuedWorkAsync(orders, JobOptions.DefaultLane, default);
+        var before = await transport.HasQueuedWorkAsync(orders, JobOptions.DefaultLane, TestContext.Current.CancellationToken);
 
         await SendAsync<JobReference>(app, new PlaceOrderCommand(Guid.NewGuid(), "A-1", FailAfterQueueing: false));
 
         Assert.False(before);
-        Assert.True(await transport.HasQueuedWorkAsync(orders, JobOptions.DefaultLane, default));
-        Assert.False(await transport.HasQueuedWorkAsync(orders, "search", default));
+        Assert.True(await transport.HasQueuedWorkAsync(orders, JobOptions.DefaultLane, TestContext.Current.CancellationToken));
+        Assert.False(await transport.HasQueuedWorkAsync(orders, "search", TestContext.Current.CancellationToken));
     }
 
     [Fact]
-    public async Task A_job_rolls_back_with_the_data_that_queued_it()
+    public async Task AJobRollsBackWithTheDataThatQueuedIt()
     {
         await using var app = await PostgresServer.CreateAppAsync();
 
@@ -48,22 +48,22 @@ public sealed class JobsTests
     }
 
     [Fact]
-    public async Task A_job_runs_its_command_and_succeeds_in_the_same_unit_of_work_with_its_result_link()
+    public async Task AJobRunsItsCommandAndSucceedsInTheSameUnitOfWorkWithItsResultLink()
     {
         await using var app = await PostgresServer.CreateAppAsync();
         var orderId = Guid.NewGuid();
         var job = await SendAsync<JobReference>(app, new PlaceOrderCommand(orderId, "A-1", FailAfterQueueing: false));
 
-        Assert.True(await Runner(app).RunNextAsync("Orders"));
+        Assert.True(await Runner(app).RunNextAsync("Orders", cancellationToken: TestContext.Current.CancellationToken));
 
         var record = (await JobAsync(app, "Orders", job.Id))!;
         Assert.Equal((JobStatus.Succeeded, 1, $"/api/orders/{orderId}"), (record.Status, record.Attempts, record.ResultLink));
         Assert.Equal(1, await CountAsync(app, "orders.orders WHERE shipped"));
-        Assert.False(await Runner(app).RunNextAsync("Orders"));
+        Assert.False(await Runner(app).RunNextAsync("Orders", cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]
-    public async Task Two_workers_never_claim_the_same_job()
+    public async Task TwoWorkersNeverClaimTheSameJob()
     {
         await using var app = await PostgresServer.CreateAppAsync();
         var queued = new List<Guid>();
@@ -91,28 +91,28 @@ public sealed class JobsTests
     }
 
     [Fact]
-    public async Task A_failing_job_is_retried_and_then_succeeds()
+    public async Task AFailingJobIsRetriedAndThenSucceeds()
     {
         await using var app = await PostgresServer.CreateAppAsync();
         var job = await EnqueueAsync(app, new FlakyCommand(FailedAttempts: 2));
 
-        Assert.True(await Runner(app).RunNextAsync("Orders"));
+        Assert.True(await Runner(app).RunNextAsync("Orders", cancellationToken: TestContext.Current.CancellationToken));
         var afterFirst = (await JobAsync(app, "Orders", job.Id))!;
         Assert.Equal((JobStatus.Queued, 1, "/problems/jobs/failed"), (afterFirst.Status, afterFirst.Attempts, afterFirst.LastError!.Type));
 
-        Assert.Equal(2, await Runner(app).RunUntilIdleAsync("Orders"));
+        Assert.Equal(2, await Runner(app).RunUntilIdleAsync("Orders", cancellationToken: TestContext.Current.CancellationToken));
 
         var done = (await JobAsync(app, "Orders", job.Id))!;
         Assert.Equal((JobStatus.Succeeded, 3), (done.Status, done.Attempts));
     }
 
     [Fact]
-    public async Task A_job_that_keeps_failing_stops_after_its_maximum_attempts()
+    public async Task AJobThatKeepsFailingStopsAfterItsMaximumAttempts()
     {
         await using var app = await PostgresServer.CreateAppAsync();
         var job = await EnqueueAsync(app, new FlakyCommand(FailedAttempts: 99), new JobOptions(MaxAttempts: 3));
 
-        Assert.Equal(3, await Runner(app).RunUntilIdleAsync("Orders"));
+        Assert.Equal(3, await Runner(app).RunUntilIdleAsync("Orders", cancellationToken: TestContext.Current.CancellationToken));
 
         var failed = (await JobAsync(app, "Orders", job.Id))!;
         Assert.Equal((JobStatus.Failed, 3), (failed.Status, failed.Attempts));
@@ -121,7 +121,7 @@ public sealed class JobsTests
     }
 
     [Fact]
-    public async Task A_retry_waits_for_its_backoff()
+    public async Task ARetryWaitsForItsBackoff()
     {
         var connection = await PostgresServer.CreateDatabaseAsync();
         await using var app = new ServiceCollection().AddTestApp(connection)
@@ -129,33 +129,33 @@ public sealed class JobsTests
             .BuildServiceProvider();
         var job = await EnqueueAsync(app, new FlakyCommand(FailedAttempts: 1));
 
-        Assert.True(await Runner(app).RunNextAsync("Orders"));
+        Assert.True(await Runner(app).RunNextAsync("Orders", cancellationToken: TestContext.Current.CancellationToken));
 
         var waiting = (await JobAsync(app, "Orders", job.Id))!;
         Assert.Equal(JobStatus.Queued, waiting.Status);
         Assert.True(waiting.NotBefore > waiting.StartedAt);
-        Assert.False(await Runner(app).RunNextAsync("Orders"));
+        Assert.False(await Runner(app).RunNextAsync("Orders", cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]
-    public async Task A_validation_failure_fails_the_job_at_once()
+    public async Task AValidationFailureFailsTheJobAtOnce()
     {
         await using var app = await PostgresServer.CreateAppAsync();
         var job = await EnqueueAsync(app, new StrictCommand(""));
 
-        Assert.Equal(1, await Runner(app).RunUntilIdleAsync("Orders"));
+        Assert.Equal(1, await Runner(app).RunUntilIdleAsync("Orders", cancellationToken: TestContext.Current.CancellationToken));
 
         var failed = (await JobAsync(app, "Orders", job.Id))!;
         Assert.Equal((JobStatus.Failed, 1, "/problems/jobs/invalid"), (failed.Status, failed.Attempts, failed.LastError!.Type));
     }
 
     [Fact]
-    public async Task A_domain_error_fails_the_job_at_once_with_its_problem_type()
+    public async Task ADomainErrorFailsTheJobAtOnceWithItsProblemType()
     {
         await using var app = await PostgresServer.CreateAppAsync();
         var job = await EnqueueAsync(app, new RefusedCommand("A-1"));
 
-        Assert.Equal(1, await Runner(app).RunUntilIdleAsync("Orders"));
+        Assert.Equal(1, await Runner(app).RunUntilIdleAsync("Orders", cancellationToken: TestContext.Current.CancellationToken));
 
         var failed = (await JobAsync(app, "Orders", job.Id))!;
         Assert.Equal((JobStatus.Failed, 1, "/problems/orders/order-refused", "The order is refused."),
@@ -163,44 +163,44 @@ public sealed class JobsTests
     }
 
     [Fact]
-    public async Task A_job_whose_heartbeat_went_stale_goes_back_in_the_queue()
+    public async Task AJobWhoseHeartbeatWentStaleGoesBackInTheQueue()
     {
         await using var app = await PostgresServer.CreateAppAsync();
         var job = await EnqueueAsync(app, new FlakyCommand(0));
         var transport = app.GetRequiredService<IJobTransport>();
         var orders = Registry(app).Find("Orders")!;
-        Assert.Equal(job.Id, (await transport.ClaimAsync(orders, JobOptions.DefaultLane, TimeSpan.FromMinutes(2), default))!.Id);
-        Assert.Null(await transport.ClaimAsync(orders, JobOptions.DefaultLane, TimeSpan.FromMinutes(2), default));
+        Assert.Equal(job.Id, (await transport.ClaimAsync(orders, JobOptions.DefaultLane, TimeSpan.FromMinutes(2), TestContext.Current.CancellationToken))!.Id);
+        Assert.Null(await transport.ClaimAsync(orders, JobOptions.DefaultLane, TimeSpan.FromMinutes(2), TestContext.Current.CancellationToken));
 
         await ExecuteAsync(app, $"UPDATE orders.jobs SET heartbeat_at = now() - interval '3 minutes' WHERE id = '{job.Id}'");
 
-        var reclaimed = await transport.ClaimAsync(orders, JobOptions.DefaultLane, TimeSpan.FromMinutes(2), default);
+        var reclaimed = await transport.ClaimAsync(orders, JobOptions.DefaultLane, TimeSpan.FromMinutes(2), TestContext.Current.CancellationToken);
         Assert.Equal((job.Id, 2), (reclaimed!.Id, reclaimed.Attempts));
     }
 
     [Fact]
-    public async Task Canceling_a_queued_job_means_it_never_runs()
+    public async Task CancelingAQueuedJobMeansItNeverRuns()
     {
         await using var app = await PostgresServer.CreateAppAsync();
         var job = await EnqueueAsync(app, new FlakyCommand(0));
 
-        var canceled = await app.GetRequiredService<IJobTransport>().RequestCancelAsync(Registry(app).Find("Orders")!, job.Id, default);
+        var canceled = await app.GetRequiredService<IJobTransport>().RequestCancelAsync(Registry(app).Find("Orders")!, job.Id, TestContext.Current.CancellationToken);
 
         Assert.Equal(JobStatus.Canceled, canceled!.Status);
-        Assert.False(await Runner(app).RunNextAsync("Orders"));
+        Assert.False(await Runner(app).RunNextAsync("Orders", cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]
-    public async Task Canceling_a_running_job_reaches_its_handler_through_the_token()
+    public async Task CancelingARunningJobReachesItsHandlerThroughTheToken()
     {
         await using var app = await PostgresServer.CreateAppAsync();
         var key = Guid.NewGuid();
         var job = await EnqueueAsync(app, new WaitCommand(key, 0.5));
-        var running = Runner(app).RunNextAsync("Orders");
+        var running = Runner(app).RunNextAsync("Orders", cancellationToken: TestContext.Current.CancellationToken);
         await app.GetRequiredService<Signals>().For(key).Started.Task;
 
         var progress = (await JobAsync(app, "Orders", job.Id))!;
-        await app.GetRequiredService<IJobTransport>().RequestCancelAsync(Registry(app).Find("Orders")!, job.Id, default);
+        await app.GetRequiredService<IJobTransport>().RequestCancelAsync(Registry(app).Find("Orders")!, job.Id, TestContext.Current.CancellationToken);
         await running;
 
         Assert.Equal((JobStatus.Running, 0.5, "waiting"), (progress.Status, progress.ProgressFraction, progress.ProgressStep));
@@ -208,7 +208,7 @@ public sealed class JobsTests
     }
 
     [Fact]
-    public async Task On_shutdown_a_running_job_goes_back_in_the_queue()
+    public async Task OnShutdownARunningJobGoesBackInTheQueue()
     {
         await using var app = await PostgresServer.CreateAppAsync();
         var key = Guid.NewGuid();
@@ -225,7 +225,7 @@ public sealed class JobsTests
     }
 
     [Fact]
-    public async Task A_dedupe_key_replaces_the_older_queued_job()
+    public async Task ADedupeKeyReplacesTheOlderQueuedJob()
     {
         await using var app = await PostgresServer.CreateAppAsync();
 
@@ -235,32 +235,32 @@ public sealed class JobsTests
         var replaced = (await JobAsync(app, "Orders", first.Id))!;
         Assert.Equal((JobStatus.Canceled, "/problems/jobs/superseded"), (replaced.Status, replaced.LastError!.Type));
         Assert.Equal(JobStatus.Queued, (await JobAsync(app, "Orders", second.Id))!.Status);
-        Assert.Equal(1, await Runner(app).RunUntilIdleAsync("Orders"));
+        Assert.Equal(1, await Runner(app).RunUntilIdleAsync("Orders", cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]
-    public async Task Jobs_run_only_on_their_lane()
+    public async Task JobsRunOnlyOnTheirLane()
     {
         await using var app = await PostgresServer.CreateAppAsync();
         var job = await EnqueueAsync(app, new FlakyCommand(0), new JobOptions(Lane: "slow"));
 
-        Assert.False(await Runner(app).RunNextAsync("Orders"));
-        Assert.True(await Runner(app).RunNextAsync("Orders", "slow"));
+        Assert.False(await Runner(app).RunNextAsync("Orders", cancellationToken: TestContext.Current.CancellationToken));
+        Assert.True(await Runner(app).RunNextAsync("Orders", "slow", TestContext.Current.CancellationToken));
         Assert.Equal(JobStatus.Succeeded, (await JobAsync(app, "Orders", job.Id))!.Status);
     }
 
     [Fact]
-    public async Task A_batch_job_resumes_from_its_checkpoint_after_a_crash()
+    public async Task ABatchJobResumesFromItsCheckpointAfterACrash()
     {
         await using var app = await PostgresServer.CreateAppAsync();
         var job = await EnqueueAsync(app, new ImportOrdersCommand(Total: 7, CrashWhenDone: 4));
 
-        Assert.True(await Runner(app).RunNextAsync("Orders"));
+        Assert.True(await Runner(app).RunNextAsync("Orders", cancellationToken: TestContext.Current.CancellationToken));
         var crashed = (await JobAsync(app, "Orders", job.Id))!;
         Assert.Equal((JobStatus.Queued, """{"done":4}"""), (crashed.Status, crashed.Checkpoint!.Replace(" ", "")));
         Assert.Equal(4, await CountAsync(app, "orders.orders"));
 
-        Assert.True(await Runner(app).RunNextAsync("Orders"));
+        Assert.True(await Runner(app).RunNextAsync("Orders", cancellationToken: TestContext.Current.CancellationToken));
 
         var done = (await JobAsync(app, "Orders", job.Id))!;
         Assert.Equal((JobStatus.Succeeded, 2, "/api/orders", 1.0), (done.Status, done.Attempts, done.ResultLink, done.ProgressFraction));
@@ -269,7 +269,7 @@ public sealed class JobsTests
     }
 
     [Fact]
-    public async Task A_rolled_back_change_delivers_no_event()
+    public async Task ARolledBackChangeDeliversNoEvent()
     {
         await using var app = await PostgresServer.CreateAppAsync();
         var orderId = await PlacedOrderAsync(app);
@@ -281,7 +281,7 @@ public sealed class JobsTests
     }
 
     [Fact]
-    public async Task An_event_published_in_a_unit_of_work_that_later_fails_is_not_delivered()
+    public async Task AnEventPublishedInAUnitOfWorkThatLaterFailsIsNotDelivered()
     {
         await using var app = await PostgresServer.CreateAppAsync();
         var orderId = await PlacedOrderAsync(app);
@@ -292,7 +292,7 @@ public sealed class JobsTests
             {
                 await scope.ServiceProvider.GetRequiredService<IDispatcher>().SendAsync<Guid>(new CancelOrderCommand(orderId, FailAfterCancel: false), token);
                 throw new TimeoutException("The surrounding work failed after the event was published.");
-            }));
+            }, TestContext.Current.CancellationToken));
         }
 
         Assert.Equal(0, await CountAsync(app, "billing.jobs"));
@@ -301,7 +301,7 @@ public sealed class JobsTests
     }
 
     [Fact]
-    public async Task An_event_reaches_every_subscriber_and_one_failing_subscriber_does_not_affect_the_others()
+    public async Task AnEventReachesEverySubscriberAndOneFailingSubscriberDoesNotAffectTheOthers()
     {
         await using var app = await PostgresServer.CreateAppAsync();
         var orderId = await PlacedOrderAsync(app);
@@ -310,15 +310,15 @@ public sealed class JobsTests
 
         Assert.Equal(1, await CountAsync(app, "billing.jobs"));
         Assert.Equal(1, await CountAsync(app, "mail.jobs"));
-        Assert.Equal(5, await Runner(app).RunUntilIdleAsync("Mail"));
-        Assert.Equal(1, await Runner(app).RunUntilIdleAsync("Billing"));
+        Assert.Equal(5, await Runner(app).RunUntilIdleAsync("Mail", cancellationToken: TestContext.Current.CancellationToken));
+        Assert.Equal(1, await Runner(app).RunUntilIdleAsync("Billing", cancellationToken: TestContext.Current.CancellationToken));
         Assert.Equal(1, await CountAsync(app, $"billing.refunds WHERE order_id = '{orderId}'"));
         Assert.Equal(1, await CountAsync(app, "billing.jobs WHERE status = 'succeeded'"));
         Assert.Equal(1, await CountAsync(app, "mail.jobs WHERE status = 'failed' AND attempts = 5"));
     }
 
     [Fact]
-    public async Task Queueing_a_command_no_module_registered_names_the_command()
+    public async Task QueueingACommandNoModuleRegisteredNamesTheCommand()
     {
         await using var app = await PostgresServer.CreateAppAsync();
 
@@ -328,7 +328,7 @@ public sealed class JobsTests
     }
 
     [Fact]
-    public async Task Without_Docker_the_database_tests_fail_and_say_Docker_is_needed()
+    public async Task WithoutDockerTheDatabaseTestsFailAndSayDockerIsNeeded()
     {
         var unreachable = new InvalidOperationException("Docker is either not running or misconfigured.");
 

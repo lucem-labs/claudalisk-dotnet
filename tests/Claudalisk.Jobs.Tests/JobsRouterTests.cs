@@ -13,12 +13,12 @@ namespace Claudalisk.Jobs.Tests;
 public sealed class JobsRouterTests
 {
     [Fact]
-    public async Task The_router_shows_a_queued_job_with_its_cancel_action()
+    public async Task TheRouterShowsAQueuedJobWithItsCancelAction()
     {
         await using var app = await StartAsync();
         var job = await JobsTests.SendAsync<JobReference>(app.Services, new PlaceOrderCommand(Guid.NewGuid(), "A-1", FailAfterQueueing: false));
 
-        var body = await app.GetTestClient().GetFromJsonAsync<JsonElement>(job.Url);
+        var body = await app.GetTestClient().GetFromJsonAsync<JsonElement>(job.Url, TestContext.Current.CancellationToken);
 
         Assert.Equal(job.Id, body.GetProperty("id").GetGuid());
         Assert.Equal("Orders", body.GetProperty("module").GetString());
@@ -32,32 +32,32 @@ public sealed class JobsRouterTests
     }
 
     [Fact]
-    public async Task A_finished_job_links_its_result_and_can_no_longer_be_canceled()
+    public async Task AFinishedJobLinksItsResultAndCanNoLongerBeCanceled()
     {
         await using var app = await StartAsync();
         var orderId = Guid.NewGuid();
         var job = await JobsTests.SendAsync<JobReference>(app.Services, new PlaceOrderCommand(orderId, "A-1", FailAfterQueueing: false));
-        await JobsTests.Runner(app.Services).RunUntilIdleAsync("Orders");
+        await JobsTests.Runner(app.Services).RunUntilIdleAsync("Orders", cancellationToken: TestContext.Current.CancellationToken);
 
-        var body = await app.GetTestClient().GetFromJsonAsync<JsonElement>(job.Url);
-        var cancel = await app.GetTestClient().PostAsync($"{job.Url}/cancel", null);
+        var body = await app.GetTestClient().GetFromJsonAsync<JsonElement>(job.Url, TestContext.Current.CancellationToken);
+        var cancel = await app.GetTestClient().PostAsync($"{job.Url}/cancel", null, TestContext.Current.CancellationToken);
 
         Assert.Equal("succeeded", body.GetProperty("status").GetString());
         Assert.Equal(1.0, body.GetProperty("progress").GetProperty("fraction").GetDouble());
         Assert.Equal($"/api/orders/{orderId}", body.GetProperty("_links").GetProperty("result").GetProperty("href").GetString());
         Assert.False(body.GetProperty("_actions").TryGetProperty("cancel", out _));
         Assert.Equal(HttpStatusCode.Conflict, cancel.StatusCode);
-        Assert.Equal("/problems/jobs/not-cancelable", (await cancel.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("type").GetString());
+        Assert.Equal("/problems/jobs/not-cancelable", (await cancel.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken)).GetProperty("type").GetString());
     }
 
     [Fact]
-    public async Task Canceling_through_the_router_cancels_a_queued_job()
+    public async Task CancelingThroughTheRouterCancelsAQueuedJob()
     {
         await using var app = await StartAsync();
         var job = await JobsTests.SendAsync<JobReference>(app.Services, new PlaceOrderCommand(Guid.NewGuid(), "A-1", FailAfterQueueing: false));
 
-        var response = await app.GetTestClient().PostAsync($"{job.Url}/cancel", null);
-        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var response = await app.GetTestClient().PostAsync($"{job.Url}/cancel", null, TestContext.Current.CancellationToken);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("canceled", body.GetProperty("status").GetString());
@@ -65,13 +65,13 @@ public sealed class JobsRouterTests
     }
 
     [Fact]
-    public async Task A_failed_job_shows_its_last_error_as_problem_details()
+    public async Task AFailedJobShowsItsLastErrorAsProblemDetails()
     {
         await using var app = await StartAsync();
         var job = await JobsTests.EnqueueAsync(app.Services, new StrictCommand(""));
-        await JobsTests.Runner(app.Services).RunUntilIdleAsync("Orders");
+        await JobsTests.Runner(app.Services).RunUntilIdleAsync("Orders", cancellationToken: TestContext.Current.CancellationToken);
 
-        var body = await app.GetTestClient().GetFromJsonAsync<JsonElement>(job.Url);
+        var body = await app.GetTestClient().GetFromJsonAsync<JsonElement>(job.Url, TestContext.Current.CancellationToken);
 
         Assert.Equal("failed", body.GetProperty("status").GetString());
         Assert.Equal("/problems/jobs/invalid", body.GetProperty("error").GetProperty("type").GetString());
@@ -81,24 +81,24 @@ public sealed class JobsRouterTests
     [Theory]
     [InlineData("/api/jobs/unknown-module/0b0c9f5e-7c69-4b1a-9a4b-8d3f8e6a2b11")]
     [InlineData("/api/jobs/orders/0b0c9f5e-7c69-4b1a-9a4b-8d3f8e6a2b11")]
-    public async Task An_unknown_module_or_job_is_404(string path)
+    public async Task AnUnknownModuleOrJobIs404(string path)
     {
         await using var app = await StartAsync();
 
-        var response = await app.GetTestClient().GetAsync(path);
+        var response = await app.GetTestClient().GetAsync(path, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-        Assert.Equal("/problems/jobs/job-not-found", (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("type").GetString());
+        Assert.Equal("/problems/jobs/job-not-found", (await response.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken)).GetProperty("type").GetString());
     }
 
     [Fact]
-    public async Task The_router_reads_every_module_by_its_name()
+    public async Task TheRouterReadsEveryModuleByItsName()
     {
         await using var app = await StartAsync();
         var job = await JobsTests.EnqueueAsync(app.Services, new FlakyCommand(0));
 
-        var byName = await app.GetTestClient().GetAsync($"/api/jobs/Orders/{job.Id}");
-        var bySegment = await app.GetTestClient().GetAsync($"/api/jobs/orders/{job.Id}");
+        var byName = await app.GetTestClient().GetAsync($"/api/jobs/Orders/{job.Id}", TestContext.Current.CancellationToken);
+        var bySegment = await app.GetTestClient().GetAsync($"/api/jobs/orders/{job.Id}", TestContext.Current.CancellationToken);
 
         Assert.Equal((HttpStatusCode.OK, HttpStatusCode.OK), (byName.StatusCode, bySegment.StatusCode));
     }

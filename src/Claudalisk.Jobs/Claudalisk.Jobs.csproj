@@ -1,7 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <IsPackable>true</IsPackable>
     <PackageId>Claudalisk.Jobs</PackageId>
     <Description>Queued work as jobs: queueing in the unit of work, workers with retries, heartbeats, cancel and progress, batch jobs, event fan-out and the jobs router.</Description>
+    <PackageTags>claudalisk;jobs;background-jobs;queue;outbox;batch-jobs;domain-events;modular-monolith</PackageTags>
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Claudalisk.Jobs.Tests" />

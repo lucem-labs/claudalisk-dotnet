@@ -10,9 +10,9 @@ using Microsoft.Extensions.Options;
 
 namespace Claudalisk.Jobs;
 
-public sealed class JobRunner
+public sealed partial class JobRunner
 {
-    private static readonly MethodInfo BatchMethod = typeof(JobRunner).GetMethod(nameof(RunBatchesAsync), BindingFlags.NonPublic | BindingFlags.Instance)!;
+    private static readonly MethodInfo BatchMethod = typeof(JobRunner).GetMethod(nameof(RunBatchesAsync), BindingFlags.NonPublic | BindingFlags.Static)!;
     private static readonly MethodInfo EventMethod = typeof(JobRunner).GetMethod(nameof(HandleEventAsync), BindingFlags.NonPublic | BindingFlags.Static)!;
 
     private readonly IServiceScopeFactory _scopes;
@@ -84,7 +84,7 @@ public sealed class JobRunner
                     break;
                 case JobKindType.Batch:
                     await (Task)BatchMethod.MakeGenericMethod(kind.PayloadType, kind.CheckpointType!)
-                        .Invoke(this, [scope.ServiceProvider, kind, context, payload, claimed.Checkpoint, cancel.Token])!;
+                        .Invoke(null, [scope.ServiceProvider, kind, context, payload, claimed.Checkpoint, cancel.Token])!;
                     break;
                 default:
                     await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().RunAsync(async token =>
@@ -111,7 +111,7 @@ public sealed class JobRunner
             var retry = exception is not (MessageValidationException or DomainException) && claimed.Attempts < claimed.MaxAttempts;
             if (error.Type == UnexpectedError)
             {
-                _logger.LogError(exception, "Job {Module}/{Id} ({Kind}) failed on attempt {Attempt}", module.Name, claimed.Id, claimed.Kind, claimed.Attempts);
+                LogJobFailed(_logger, exception, module.Name, claimed.Id, claimed.Kind, claimed.Attempts);
             }
 
             await _transport.RetryOrFailAsync(module, claimed.Id, error, retry ? Backoff(claimed.Attempts) : null, CancellationToken.None);
@@ -123,7 +123,7 @@ public sealed class JobRunner
         }
     }
 
-    private async Task RunBatchesAsync<TCommand, TCheckpoint>(
+    private static async Task RunBatchesAsync<TCommand, TCheckpoint>(
         IServiceProvider scope, JobKind kind, JobContext context, object payload, string? stored, CancellationToken cancellationToken)
         where TCommand : notnull
         where TCheckpoint : class
@@ -178,7 +178,7 @@ public sealed class JobRunner
         }
         catch (Exception exception)
         {
-            _logger.LogWarning(exception, "The heartbeat of job {Module}/{Id} failed", module.Name, id);
+            LogHeartbeatFailed(_logger, exception, module.Name, id);
         }
     }
 
@@ -198,4 +198,10 @@ public sealed class JobRunner
         MessageValidationException validation => new JobError("/problems/jobs/invalid", "The job's input is not valid.", validation.Message),
         _ => new JobError(UnexpectedError, "The job failed.", null),
     };
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Job {Module}/{Id} ({Kind}) failed on attempt {Attempt}")]
+    private static partial void LogJobFailed(ILogger logger, Exception exception, string module, Guid id, string kind, int attempt);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "The heartbeat of job {Module}/{Id} failed")]
+    private static partial void LogHeartbeatFailed(ILogger logger, Exception exception, string module, Guid id);
 }

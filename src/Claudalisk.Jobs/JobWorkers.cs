@@ -4,7 +4,7 @@ using Microsoft.Extensions.Options;
 
 namespace Claudalisk.Jobs;
 
-internal sealed class JobWorkers(JobRunner runner, IJobTransport transport, JobsRegistry registry, IOptions<JobsOptions> options, ILogger<JobWorkers> logger)
+internal sealed partial class JobWorkers(JobRunner runner, IJobTransport transport, JobsRegistry registry, IOptions<JobsOptions> options, ILogger<JobWorkers> logger)
     : BackgroundService
 {
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
@@ -38,7 +38,7 @@ internal sealed class JobWorkers(JobRunner runner, IJobTransport transport, Jobs
             }
             catch (Exception exception)
             {
-                logger.LogError(exception, "The {Module} worker on lane {Lane} failed; it waits and tries again", module.Name, lane);
+                LogWorkerFailed(logger, exception, module.Name, lane);
                 try
                 {
                     await Task.Delay(options.Value.PollInterval, stoppingToken);
@@ -50,4 +50,6 @@ internal sealed class JobWorkers(JobRunner runner, IJobTransport transport, Jobs
             }
         }
     }
+    [LoggerMessage(Level = LogLevel.Error, Message = "The {Module} worker on lane {Lane} failed; it waits and tries again")]
+    private static partial void LogWorkerFailed(ILogger logger, Exception exception, string module, string lane);
 }
