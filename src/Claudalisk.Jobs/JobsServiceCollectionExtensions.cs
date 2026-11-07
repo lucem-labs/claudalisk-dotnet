@@ -1,0 +1,69 @@
+using Claudalisk.Dispatching;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+
+namespace Claudalisk.Jobs;
+
+public static class JobsServiceCollectionExtensions
+{
+    public static IServiceCollection AddModuleJobs(this IServiceCollection services, string module, string schema, Action<ModuleJobsBuilder> configure)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configure);
+        var registry = Registry(services);
+        configure(new ModuleJobsBuilder(registry.GetOrAdd(module, schema), services, registry));
+        return services;
+    }
+
+    public static IServiceCollection AddJobs(this IServiceCollection services, Action<JobsOptions>? configure = null)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        if (configure is not null)
+        {
+            services.Configure(configure);
+        }
+
+        if (services.Any(descriptor => descriptor.ServiceType == typeof(JobRunner)))
+        {
+            return services;
+        }
+
+        if (!services.Any(descriptor => descriptor.ServiceType == typeof(IDispatcher)))
+        {
+            throw new InvalidOperationException("Call AddDispatching before AddJobs: jobs complete inside the dispatcher's unit-of-work step.");
+        }
+
+        Registry(services);
+        services.AddOptions<JobsOptions>();
+        services.TryAddScoped<JobContext>();
+        services.TryAddScoped<IJobContext>(provider => provider.GetRequiredService<JobContext>());
+        services.TryAddScoped<IJobQueue, JobQueue>();
+        services.TryAddScoped<AggregateTracker>();
+        services.TryAddScoped<IAggregateTracker>(provider => provider.GetRequiredService<AggregateTracker>());
+        services.TryAddScoped<EventPublisher>();
+        services.TryAddScoped<IEventPublisher>(provider => provider.GetRequiredService<EventPublisher>());
+        services.AddScoped<IPipelineStep, JobsPipelineStep>();
+        services.AddSingleton(provider => new JobRunner(
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            provider.GetRequiredService<IJobTransport>(),
+            provider.GetRequiredService<JobsRegistry>(),
+            provider.GetRequiredService<IOptions<JobsOptions>>(),
+            provider.GetRequiredService<ILogger<JobRunner>>()));
+        services.AddHostedService<JobWorkers>();
+        return services;
+    }
+
+    private static JobsRegistry Registry(IServiceCollection services)
+    {
+        var registry = services.Select(descriptor => descriptor.ImplementationInstance).OfType<JobsRegistry>().SingleOrDefault();
+        if (registry is null)
+        {
+            registry = new JobsRegistry();
+            services.AddSingleton(registry);
+        }
+
+        return registry;
+    }
+}

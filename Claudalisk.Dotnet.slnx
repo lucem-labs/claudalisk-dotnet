@@ -10,6 +10,8 @@
     <Project Path="src/Claudalisk.Dispatching/Claudalisk.Dispatching.csproj" />
     <Project Path="src/Claudalisk.Dispatching.Abstractions/Claudalisk.Dispatching.Abstractions.csproj" />
     <Project Path="src/Claudalisk.Domain/Claudalisk.Domain.csproj" />
+    <Project Path="src/Claudalisk.Jobs.PostgreSql/Claudalisk.Jobs.PostgreSql.csproj" />
+    <Project Path="src/Claudalisk.Jobs/Claudalisk.Jobs.csproj" />
     <Project Path="src/Claudalisk.Modules/Claudalisk.Modules.csproj" />
     <Project Path="src/Claudalisk.Persistence/Claudalisk.Persistence.csproj" />
     <Project Path="src/Claudalisk.Persistence.Abstractions/Claudalisk.Persistence.Abstractions.csproj" />
@@ -19,6 +21,7 @@
     <Project Path="tests/Claudalisk.Ci.Tests/Claudalisk.Ci.Tests.csproj" />
     <Project Path="tests/Claudalisk.Dispatching.Tests/Claudalisk.Dispatching.Tests.csproj" />
     <Project Path="tests/Claudalisk.Domain.Tests/Claudalisk.Domain.Tests.csproj" />
+    <Project Path="tests/Claudalisk.Jobs.Tests/Claudalisk.Jobs.Tests.csproj" />
     <Project Path="tests/Claudalisk.Modules.Tests/Claudalisk.Modules.Tests.csproj" />
     <Project Path="tests/Claudalisk.Persistence.Tests/Claudalisk.Persistence.Tests.csproj" />
   </Folder>

@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>Claudalisk.Jobs.PostgreSql</PackageId>
+    <Description>The PostgreSQL transport of Claudalisk.Jobs: the jobs table, FOR UPDATE SKIP LOCKED claims and LISTEN/NOTIFY.</Description>
+    <PackageTags>claudalisk;jobs;postgresql;npgsql;listen-notify;skip-locked;modular-monolith</PackageTags>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Claudalisk.Jobs.Tests" />
+    <ProjectReference Include="..\Claudalisk.Jobs\Claudalisk.Jobs.csproj" />
+    <ProjectReference Include="..\Claudalisk.Persistence\Claudalisk.Persistence.csproj" />
+  </ItemGroup>
+</Project>
