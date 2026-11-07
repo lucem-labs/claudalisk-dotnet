@@ -70,6 +70,14 @@ internal sealed class PostgreSqlJobWriter(IScopeConnection scope) : IJobWriter
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    public async Task<bool> DeleteFinishedAsync(JobsModule module, Guid id, CancellationToken cancellationToken)
+    {
+        await using var command = await CommandAsync(
+            $"DELETE FROM {JobsTable.Quote(module.Schema)}.jobs WHERE id = @id AND status IN ('succeeded', 'failed', 'canceled')", cancellationToken);
+        command.Parameters.AddWithValue("id", id);
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+    }
+
     private async Task<NpgsqlCommand> CommandAsync(string sql, CancellationToken cancellationToken)
     {
         if (scope.Connection.State != ConnectionState.Open)

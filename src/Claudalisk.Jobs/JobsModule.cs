@@ -40,6 +40,8 @@ public sealed partial class JobsModule
 
     public IReadOnlyDictionary<string, int> Lanes => _lanes;
 
+    public TimeSpan? Retention { get; private set; }
+
     public IReadOnlyDictionary<string, JobKind> Kinds => _kinds;
 
     public JobKind? KindFor(Type payloadType) =>
@@ -50,6 +52,12 @@ public sealed partial class JobsModule
         ArgumentException.ThrowIfNullOrWhiteSpace(lane);
         ArgumentOutOfRangeException.ThrowIfNegative(workers);
         _lanes[lane] = workers;
+    }
+
+    internal void SetRetention(TimeSpan retention)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(retention, TimeSpan.Zero);
+        Retention = retention;
     }
 
     internal void AddKind(JobKind kind)
@@ -84,6 +92,12 @@ public sealed class ModuleJobsBuilder
     public ModuleJobsBuilder Lane(string lane, int workers)
     {
         Module.AddLane(lane, workers);
+        return this;
+    }
+
+    public ModuleJobsBuilder Retention(TimeSpan retention)
+    {
+        Module.SetRetention(retention);
         return this;
     }
 

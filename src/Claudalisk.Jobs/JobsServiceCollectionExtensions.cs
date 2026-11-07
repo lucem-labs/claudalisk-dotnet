@@ -40,6 +40,7 @@ public static class JobsServiceCollectionExtensions
         services.TryAddScoped<JobContext>();
         services.TryAddScoped<IJobContext>(provider => provider.GetRequiredService<JobContext>());
         services.TryAddScoped<IJobQueue, JobQueue>();
+        services.TryAddScoped<IJobHistory, JobHistory>();
         services.TryAddScoped<AggregateTracker>();
         services.TryAddScoped<IAggregateTracker>(provider => provider.GetRequiredService<AggregateTracker>());
         services.TryAddScoped<EventPublisher>();

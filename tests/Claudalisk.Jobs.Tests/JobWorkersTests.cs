@@ -38,6 +38,12 @@ public sealed class JobWorkersTests
         public Task<JobRecord?> GetAsync(JobsModule module, Guid id, CancellationToken cancellationToken) => throw new NotSupportedException();
 
         public Task<JobRecord?> RequestCancelAsync(JobsModule module, Guid id, CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<bool> IsCancelRequestedAsync(JobsModule module, Guid id, CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<JobHistoryPage> ListAsync(JobsModule module, JobHistoryQuery query, CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<int> DeleteFinishedBeforeAsync(JobsModule module, TimeSpan retention, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 
     private sealed class FailingAtShutdownTransport : IJobTransport
@@ -68,6 +74,12 @@ public sealed class JobWorkersTests
         public Task<JobRecord?> GetAsync(JobsModule module, Guid id, CancellationToken cancellationToken) => throw new NotSupportedException();
 
         public Task<JobRecord?> RequestCancelAsync(JobsModule module, Guid id, CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<bool> IsCancelRequestedAsync(JobsModule module, Guid id, CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<JobHistoryPage> ListAsync(JobsModule module, JobHistoryQuery query, CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<int> DeleteFinishedBeforeAsync(JobsModule module, TimeSpan retention, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 
     [Fact]

@@ -16,8 +16,31 @@ internal sealed partial class JobWorkers(JobRunner runner, IJobTransport transpo
 
         var workers = registry.Modules
             .SelectMany(module => module.Lanes.SelectMany(lane => Enumerable.Range(0, lane.Value).Select(_ => WorkAsync(module, lane.Key, stoppingToken))))
+            .Concat(registry.Modules.Select(module => PruneAsync(module, stoppingToken)))
             .ToArray();
         return Task.WhenAll(workers);
+    }
+
+    private async Task PruneAsync(JobsModule module, CancellationToken stoppingToken)
+    {
+        using var timer = new PeriodicTimer(options.Value.PruneInterval);
+        try
+        {
+            while (await timer.WaitForNextTickAsync(stoppingToken))
+            {
+                try
+                {
+                    await runner.PruneAsync(module.Name, stoppingToken);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
+                {
+                    LogPruneFailed(logger, exception, module.Name);
+                }
+            }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+        }
     }
 
     private async Task WorkAsync(JobsModule module, string lane, CancellationToken stoppingToken)
@@ -52,4 +75,7 @@ internal sealed partial class JobWorkers(JobRunner runner, IJobTransport transpo
     }
     [LoggerMessage(Level = LogLevel.Error, Message = "The {Module} worker on lane {Lane} failed; it waits and tries again")]
     private static partial void LogWorkerFailed(ILogger logger, Exception exception, string module, string lane);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Deleting the finished {Module} jobs failed; it tries again on the next interval")]
+    private static partial void LogPruneFailed(ILogger logger, Exception exception, string module);
 }

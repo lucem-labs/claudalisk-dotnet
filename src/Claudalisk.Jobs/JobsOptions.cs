@@ -8,6 +8,12 @@ public sealed class JobsOptions
 
     public TimeSpan HeartbeatInterval { get; set; } = TimeSpan.FromSeconds(15);
 
+    public TimeSpan CancelCheckInterval { get; set; } = TimeSpan.FromSeconds(1);
+
+    public TimeSpan FinishedJobRetention { get; set; } = TimeSpan.FromDays(30);
+
+    public TimeSpan PruneInterval { get; set; } = TimeSpan.FromHours(1);
+
     public TimeSpan StaleAfter { get; set; } = TimeSpan.FromMinutes(2);
 
     public TimeSpan RetryBaseDelay { get; set; } = TimeSpan.FromSeconds(2);

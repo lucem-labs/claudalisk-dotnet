@@ -23,6 +23,8 @@ internal sealed class AggregateTracker : IAggregateTracker
         return events;
     }
 
+    public bool HasTracked => _aggregates.Count > 0;
+
     public void Forget() => _aggregates.Clear();
 }
 
