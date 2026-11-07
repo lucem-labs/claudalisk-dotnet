@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>Claudalisk.Dispatching</PackageId>
+    <Description>The in-process dispatcher: handlers found through module registration and a pipeline of logging, validation and the unit of work.</Description>
+    <PackageTags>claudalisk;dispatcher;mediator;cqrs;fluentvalidation;unit-of-work;modular-monolith</PackageTags>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="FluentValidation" />
+    <InternalsVisibleTo Include="Claudalisk.Dispatching.Tests" />
+    <ProjectReference Include="..\Claudalisk.Dispatching.Abstractions\Claudalisk.Dispatching.Abstractions.csproj" />
+    <ProjectReference Include="..\Claudalisk.Modules\Claudalisk.Modules.csproj" />
+    <ProjectReference Include="..\Claudalisk.Persistence.Abstractions\Claudalisk.Persistence.Abstractions.csproj" />
+  </ItemGroup>
+</Project>
