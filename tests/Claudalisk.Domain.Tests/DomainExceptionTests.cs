@@ -56,6 +56,15 @@ public sealed class DomainExceptionTests
     }
 
     [Fact]
+    public void LooksUpExtensionMembersByTheirExactName()
+    {
+        var error = new OrderError("not-enough-stock", "Only 2 are left.", DomainErrorKind.Conflict, new Dictionary<string, object?> { ["available"] = 2 });
+
+        Assert.True(error.Extensions.ContainsKey("available"));
+        Assert.False(error.Extensions.ContainsKey("Available"));
+    }
+
+    [Fact]
     public void KeepsTheInnerException()
     {
         var inner = new InvalidOperationException("cause");
