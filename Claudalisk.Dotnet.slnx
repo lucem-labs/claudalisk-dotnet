@@ -15,6 +15,7 @@
     <Project Path="src/Claudalisk.Modules/Claudalisk.Modules.csproj" />
     <Project Path="src/Claudalisk.Persistence/Claudalisk.Persistence.csproj" />
     <Project Path="src/Claudalisk.Persistence.Abstractions/Claudalisk.Persistence.Abstractions.csproj" />
+    <Project Path="src/Claudalisk.Scheduling/Claudalisk.Scheduling.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Claudalisk.AspNetCore.Tests/Claudalisk.AspNetCore.Tests.csproj" />
@@ -24,5 +25,6 @@
     <Project Path="tests/Claudalisk.Jobs.Tests/Claudalisk.Jobs.Tests.csproj" />
     <Project Path="tests/Claudalisk.Modules.Tests/Claudalisk.Modules.Tests.csproj" />
     <Project Path="tests/Claudalisk.Persistence.Tests/Claudalisk.Persistence.Tests.csproj" />
+    <Project Path="tests/Claudalisk.Scheduling.Tests/Claudalisk.Scheduling.Tests.csproj" />
   </Folder>
 </Solution>
