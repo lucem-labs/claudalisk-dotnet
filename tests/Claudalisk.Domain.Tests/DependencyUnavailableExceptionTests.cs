@@ -3,49 +3,49 @@ namespace Claudalisk.Domain.Tests;
 public sealed class DependencyUnavailableExceptionTests
 {
     [Fact]
-    public void ItIsNotADomainException()
+    public void IsNotADomainException()
     {
         Assert.False(typeof(DomainException).IsAssignableFrom(typeof(DependencyUnavailableException)));
     }
 
     [Fact]
-    public void ItHasNoWaitByDefault()
+    public void HasNoWaitByDefault()
     {
-        var exception = new DependencyUnavailableException("The carrier API is down.");
+        var error = new DependencyUnavailableException("The carrier API is down.");
 
-        Assert.Equal("The carrier API is down.", exception.Message);
-        Assert.Null(exception.RetryAfter);
+        Assert.Equal("The carrier API is down.", error.Message);
+        Assert.Null(error.RetryAfter);
     }
 
     [Fact]
-    public void ItCarriesHowLongToWait()
+    public void CarriesHowLongToWait()
     {
-        var exception = new DependencyUnavailableException("The carrier API is down.", TimeSpan.FromSeconds(30));
+        var error = new DependencyUnavailableException("The carrier API is down.", TimeSpan.FromSeconds(30));
 
-        Assert.Equal(TimeSpan.FromSeconds(30), exception.RetryAfter);
+        Assert.Equal(TimeSpan.FromSeconds(30), error.RetryAfter);
     }
 
     [Fact]
-    public void ItKeepsTheInnerException()
+    public void KeepsTheInnerException()
     {
         var cause = new HttpRequestException("503");
 
-        var exception = new DependencyUnavailableException("The carrier API is down.", TimeSpan.FromSeconds(5), cause);
+        var error = new DependencyUnavailableException("The carrier API is down.", TimeSpan.FromSeconds(5), cause);
 
-        Assert.Same(cause, exception.InnerException);
+        Assert.Same(cause, error.InnerException);
         Assert.Same(cause, new DependencyUnavailableException("The carrier API is down.", cause).InnerException);
     }
 
     [Fact]
-    public void AZeroWaitIsKept()
+    public void KeepsAZeroWait()
     {
-        var exception = new DependencyUnavailableException("The carrier API is down.", TimeSpan.Zero);
+        var error = new DependencyUnavailableException("The carrier API is down.", TimeSpan.Zero);
 
-        Assert.Equal(TimeSpan.Zero, exception.RetryAfter);
+        Assert.Equal(TimeSpan.Zero, error.RetryAfter);
     }
 
     [Fact]
-    public void ANegativeWaitIsRefused()
+    public void RefusesANegativeWait()
     {
         Assert.Throws<ArgumentOutOfRangeException>(
             () => new DependencyUnavailableException("The carrier API is down.", TimeSpan.FromSeconds(-1)));
