@@ -7,9 +7,12 @@
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/Claudalisk.Domain/Claudalisk.Domain.csproj" />
+    <Project Path="src/Claudalisk.Modules/Claudalisk.Modules.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Claudalisk.Ci.Tests/Claudalisk.Ci.Tests.csproj" />
     <Project Path="tests/Claudalisk.Domain.Tests/Claudalisk.Domain.Tests.csproj" />
+    <Project Path="tests/Claudalisk.Modules.Tests.Catalog/Claudalisk.Modules.Tests.Catalog.csproj" />
+    <Project Path="tests/Claudalisk.Modules.Tests/Claudalisk.Modules.Tests.csproj" />
   </Folder>
 </Solution>

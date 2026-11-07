@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>Claudalisk.Modules</PackageId>
+    <Description>Module registration for claudalisk apps: modules declare the contracts they depend on, AddModules validates and orders them, registers each one once and adds its controllers as application parts.</Description>
+    <PackageTags>claudalisk;modules;modular-monolith;dependency-injection</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+</Project>
