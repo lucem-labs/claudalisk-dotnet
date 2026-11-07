@@ -74,6 +74,15 @@ public sealed class ProblemDetailsTests
         Assert.False(body.TryGetProperty("detail", out _));
     }
 
+    [Theory]
+    [InlineData(0, "0")]
+    [InlineData(0.001, "1")]
+    [InlineData(60, "60")]
+    public void RetryAfterIsTheWaitInWholeSecondsRoundedUp(double seconds, string retryAfter)
+    {
+        Assert.Equal(retryAfter, ProblemDetailsExceptionHandler.RetryAfterSeconds(TimeSpan.FromSeconds(seconds)));
+    }
+
     [Fact]
     public async Task AnyOtherExceptionBecomes500WithoutInternalDetails()
     {
