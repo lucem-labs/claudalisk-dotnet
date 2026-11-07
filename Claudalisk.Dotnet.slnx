@@ -5,7 +5,11 @@
     <File Path="Directory.Packages.props" />
     <File Path="global.json" />
   </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/Claudalisk.Domain/Claudalisk.Domain.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Claudalisk.Ci.Tests/Claudalisk.Ci.Tests.csproj" />
+    <Project Path="tests/Claudalisk.Domain.Tests/Claudalisk.Domain.Tests.csproj" />
   </Folder>
 </Solution>
