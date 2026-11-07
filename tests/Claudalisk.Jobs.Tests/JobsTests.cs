@@ -77,7 +77,7 @@ public sealed class JobsTests
         var claims = await Task.WhenAll(Enumerable.Range(0, 4).Select(async _ =>
         {
             var mine = new List<Guid>();
-            while (await transport.ClaimAsync(orders, JobOptions.DefaultLane, TimeSpan.FromMinutes(2), default) is { } claimed)
+            while (await transport.ClaimAsync(orders, JobOptions.DefaultLane, TimeSpan.FromMinutes(2), TestContext.Current.CancellationToken) is { } claimed)
             {
                 mine.Add(claimed.Id);
             }
