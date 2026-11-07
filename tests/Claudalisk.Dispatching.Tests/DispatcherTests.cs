@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Claudalisk.Dispatching.Tests;
 
@@ -143,7 +144,54 @@ public sealed class DispatcherTests
         Assert.Equal(["CheckOutCommand", "PlaceOrderCommand", "ChargeOrderCommand"], app.GetRequiredService<SendLog>().Sends);
     }
 
+    [Fact]
+    public async Task TheLoggingStepLogsEachSendAndItsFailure()
+    {
+        var log = new LogCollector();
+        await using var app = await PostgresServer.CreateAppAsync(services =>
+            services.AddLogging(logging => logging.SetMinimumLevel(LogLevel.Debug).AddProvider(log)));
+
+        await SendAsync<Guid>(app, new WhichScopeQuery());
+        await Assert.ThrowsAsync<InvalidOperationException>(() => SendAsync<int>(app, new PeekOrdersQuery(Guid.NewGuid())));
+
+        Assert.Equal(
+            [
+                (LogLevel.Debug, "Handling Query WhichScopeQuery", false),
+                (LogLevel.Debug, "Handled Query WhichScopeQuery", false),
+                (LogLevel.Debug, "Handling Query PeekOrdersQuery", false),
+                (LogLevel.Information, "Query PeekOrdersQuery failed: The query failed after it wrote.", true),
+            ],
+            log.Entries.Where(entry => entry.Category == typeof(IDispatcher).FullName).Select(entry => (entry.Level, entry.Message, entry.HasException)));
+    }
+
     private sealed record OrderPlaced;
+
+    private sealed class LogCollector : ILoggerProvider
+    {
+        public List<(string Category, LogLevel Level, string Message, bool HasException)> Entries { get; } = [];
+
+        public ILogger CreateLogger(string categoryName) => new Collector(this, categoryName);
+
+        public void Dispose()
+        {
+        }
+
+        private sealed class Collector(LogCollector owner, string category) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+            {
+                lock (owner.Entries)
+                {
+                    owner.Entries.Add((category, logLevel, formatter(state, exception), exception is not null));
+                }
+            }
+        }
+    }
 
     private static async Task<T> SendAsync<T>(IServiceProvider app, object message)
     {
