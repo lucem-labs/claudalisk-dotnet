@@ -8,7 +8,7 @@ public sealed class SchedulingOptions
 
     public TimeSpan TickInterval { get; set; } = TimeSpan.FromSeconds(30);
 
-    public List<ScheduleOptions> Schedules { get; set; } = [];
+    public List<ScheduleOptions> Schedules { get; } = [];
 }
 
 public sealed class ScheduleOptions
