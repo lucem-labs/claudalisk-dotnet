@@ -242,7 +242,8 @@ public sealed partial class JobRunner
                 var includes = await handler.RebuildAsync((TCommand)payload, token);
                 var deliveries = await writer.LockActiveAsync(context.JobsModule, kind.EventKind!, token);
                 var included = deliveries
-                    .Where(delivery => includes(JsonSerializer.Deserialize<TEvent>(delivery.Payload, JobQueue.Json)!))
+                    .Where(delivery => includes(JsonSerializer.Deserialize<TEvent>(delivery.Payload, JobQueue.Json)
+                        ?? throw new InvalidOperationException($"Delivery {delivery.Id} has an empty payload.")))
                     .Select(delivery => delivery.Id)
                     .ToArray();
                 await writer.MarkSucceededAsync(context.JobsModule, kind.EventKind!, included, token);
