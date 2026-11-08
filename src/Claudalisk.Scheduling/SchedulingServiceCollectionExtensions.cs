@@ -1,3 +1,4 @@
+using Claudalisk.Jobs;
 using Claudalisk.Persistence;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,6 +17,7 @@ public static class SchedulingServiceCollectionExtensions
         ArgumentException.ThrowIfNullOrWhiteSpace(module);
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         Commands(services).Add(new SchedulableCommand(name, module, typeof(TCommand)));
+        AddSchedulingJobs(services, jobs => jobs.Command<TCommand>(name));
         return services;
     }
 
@@ -23,24 +25,31 @@ public static class SchedulingServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
-        services.AddOptions<SchedulingOptions>().Bind(configuration.GetSection(SchedulingOptions.SectionName));
         if (services.Any(descriptor => descriptor.ServiceType == typeof(Scheduler)))
         {
             return services;
         }
 
-        Commands(services);
+        var commands = Commands(services);
+        services.AddOptions<SchedulingOptions>().Bind(configuration.GetSection(SchedulingOptions.SectionName)).ValidateOnStart();
+        services.AddSingleton<IValidateOptions<SchedulingOptions>>(new SchedulingOptionsValidator(commands));
+        AddSchedulingJobs(services, _ => { });
         services.TryAddSingleton(TimeProvider.System);
         services.AddModuleDbContext<SchedulingDbContext>(SchedulingDbContext.Schema);
         services.AddSingleton(provider => new Scheduler(
             provider.GetRequiredService<IServiceScopeFactory>(),
+            provider.GetRequiredService<JobsRegistry>(),
             provider.GetRequiredService<IOptions<SchedulingOptions>>(),
             provider.GetRequiredService<SchedulableCommands>(),
             provider.GetRequiredService<TimeProvider>(),
             provider.GetRequiredService<ILogger<Scheduler>>()));
+        services.AddHostedService<SchedulingStartupCheck>();
         services.AddHostedService<SchedulerService>();
         return services;
     }
+
+    private static void AddSchedulingJobs(IServiceCollection services, Action<ModuleJobsBuilder> configure) =>
+        services.AddModuleJobs(SchedulingJobs.Name, SchedulingJobs.Schema, jobs => configure(jobs.LibraryOwned()));
 
     private static SchedulableCommands Commands(IServiceCollection services)
     {

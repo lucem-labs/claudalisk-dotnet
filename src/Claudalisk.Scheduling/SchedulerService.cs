@@ -14,13 +14,19 @@ internal sealed partial class SchedulerService(Scheduler scheduler, IOptions<Sch
             return;
         }
 
-        var schedules = scheduler.Schedules;
-        LogRunning(logger, schedules.Count, schedules);
+        var announced = false;
         using var timer = new PeriodicTimer(options.Value.TickInterval, time);
         do
         {
             try
             {
+                if (!announced)
+                {
+                    var schedules = scheduler.Schedules;
+                    LogRunning(logger, schedules.Count, schedules);
+                    announced = true;
+                }
+
                 await scheduler.RunDueAsync(stoppingToken);
             }
             catch (Exception exception) when (!stoppingToken.IsCancellationRequested)

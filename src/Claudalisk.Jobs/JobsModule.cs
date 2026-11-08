@@ -203,7 +203,7 @@ public sealed class JobsRegistry
             : _modules.Values.FirstOrDefault(candidate => string.Equals(candidate.Segment, nameOrSegment, StringComparison.OrdinalIgnoreCase));
 
     public JobsModule ModuleFor(Type payloadType) =>
-        _modules.Values.FirstOrDefault(module => module.KindFor(payloadType) is not null)
+        _modules.Values.FirstOrDefault(module => !module.LibraryOwned && module.KindFor(payloadType) is not null)
         ?? throw new InvalidOperationException(
             $"No module registers '{payloadType.FullName}' as a job. Register it with AddModuleJobs(...).Command<{payloadType.Name}>(\"<kind>\").");
 

@@ -1,5 +1,7 @@
+using Claudalisk.Jobs;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 using Npgsql;
 
@@ -27,6 +29,8 @@ public sealed class SchedulerTests
         time.Advance(TimeSpan.FromMinutes(1));
         Assert.Equal(["hourly-refresh"], await scheduler.RunDueAsync(TestContext.Current.CancellationToken));
 
+        await RunJobsAsync(app);
+
         Assert.Equal(["nightly", "nightly"], refreshes.Sources);
     }
 
@@ -46,6 +50,8 @@ public sealed class SchedulerTests
         time.Advance(TimeSpan.FromMinutes(1));
         Assert.Equal(["hourly-refresh"], await scheduler.RunDueAsync(TestContext.Current.CancellationToken));
 
+        await RunJobsAsync(app);
+
         Assert.Equal(2, refreshes.Sources.Count);
     }
 
@@ -63,6 +69,7 @@ public sealed class SchedulerTests
         var fired = await Task.WhenAll(first.GetRequiredService<Scheduler>().RunDueAsync(TestContext.Current.CancellationToken), second.GetRequiredService<Scheduler>().RunDueAsync(TestContext.Current.CancellationToken));
 
         Assert.Single(fired.SelectMany(names => names));
+        await RunJobsAsync(first);
         Assert.Single(refreshes.Sources);
     }
 
@@ -77,14 +84,14 @@ public sealed class SchedulerTests
         var dataSource = app.GetRequiredService<NpgsqlDataSource>();
         await using var other = await dataSource.OpenConnectionAsync(TestContext.Current.CancellationToken);
         await using var otherFiring = await other.BeginTransactionAsync(TestContext.Current.CancellationToken);
-        await using (var lockRow = new NpgsqlCommand("SELECT last_fired_at FROM scheduling.schedules WHERE name = 'hourly-refresh' FOR UPDATE", other, otherFiring))
+        await using (var lockRow = new NpgsqlCommand("SELECT last_fired_timestamp FROM scheduling.schedules WHERE name = 'hourly-refresh' FOR UPDATE", other, otherFiring))
         {
             await lockRow.ExecuteScalarAsync(TestContext.Current.CancellationToken);
         }
 
         var waiting = scheduler.RunDueAsync(TestContext.Current.CancellationToken);
         await WaitUntilBlockedOnALockAsync(dataSource);
-        await using (var fire = new NpgsqlCommand("UPDATE scheduling.schedules SET last_fired_at = '2026-10-26T11:00:00Z' WHERE name = 'hourly-refresh'", other, otherFiring))
+        await using (var fire = new NpgsqlCommand("UPDATE scheduling.schedules SET last_fired_timestamp = '2026-10-26T11:00:00Z' WHERE name = 'hourly-refresh'", other, otherFiring))
         {
             await fire.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
         }
@@ -92,6 +99,7 @@ public sealed class SchedulerTests
         await otherFiring.CommitAsync(TestContext.Current.CancellationToken);
 
         Assert.Empty(await waiting);
+        await RunJobsAsync(app);
         Assert.Empty(refreshes.Sources);
     }
 
@@ -108,6 +116,8 @@ public sealed class SchedulerTests
         time.SetUtcNow(new DateTimeOffset(2026, 10, 27, 8, 0, 0, TimeSpan.Zero));
         Assert.Equal(["warsaw-morning"], await scheduler.RunDueAsync(TestContext.Current.CancellationToken));
 
+        await RunJobsAsync(app);
+
         Assert.Single(refreshes.Sources);
     }
 
@@ -121,6 +131,8 @@ public sealed class SchedulerTests
         time.Advance(TimeSpan.FromMinutes(30));
 
         await scheduler.RunDueAsync(TestContext.Current.CancellationToken);
+
+        await RunJobsAsync(app);
 
         Assert.Equal(["weekly-sweep"], refreshes.Sources);
     }
@@ -139,7 +151,7 @@ public sealed class SchedulerTests
             await service.StartAsync(TestContext.Current.CancellationToken);
         }
 
-        await Assert.Single(hosted.OfType<BackgroundService>()).ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        await Assert.Single(hosted.OfType<SchedulerService>()).ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
         time.Advance(TimeSpan.FromHours(5));
         foreach (var service in hosted)
         {
@@ -156,7 +168,8 @@ public sealed class SchedulerTests
         var connection = await TestApp.CreateDatabaseAsync();
         var time = new FakeTimeProvider(TestApp.Start);
         var refreshes = new Refreshes();
-        await using var app = TestApp.Build(connection, time, refreshes, enabled: true, Hourly);
+        await using var app = TestApp.Services(connection, time, refreshes, new TestSettings(Workers: true), Hourly)
+            .BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         await app.GetRequiredService<Scheduler>().RunDueAsync(TestContext.Current.CancellationToken);
         var hosted = app.GetServices<IHostedService>().ToArray();
         foreach (var service in hosted)
@@ -187,7 +200,7 @@ public sealed class SchedulerTests
             new TestSchedule("twice", "30 * * * *"));
         await using var _ = app;
 
-        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => app.GetRequiredService<Scheduler>().RunDueAsync(TestContext.Current.CancellationToken));
+        var error = await Assert.ThrowsAsync<OptionsValidationException>(() => app.GetRequiredService<Scheduler>().RunDueAsync(TestContext.Current.CancellationToken));
 
         Assert.Contains("'bad-cron' has an invalid cron expression", error.Message);
         Assert.Contains("'bad-zone' has an unknown time zone", error.Message);
@@ -216,18 +229,23 @@ public sealed class SchedulerTests
     private static async Task<DateTimeOffset?> LastFiredAsync(IServiceProvider app, string name)
     {
         await using var connection = await app.GetRequiredService<NpgsqlDataSource>().OpenConnectionAsync(TestContext.Current.CancellationToken);
-        await using var command = new NpgsqlCommand("SELECT last_fired_at FROM scheduling.schedules WHERE name = @name", connection);
+        await using var command = new NpgsqlCommand("SELECT last_fired_timestamp FROM scheduling.schedules WHERE name = @name", connection);
         command.Parameters.AddWithValue("name", name);
         return await command.ExecuteScalarAsync(TestContext.Current.CancellationToken) is DateTime value ? new DateTimeOffset(value, TimeSpan.Zero) : null;
     }
 
+    internal static Task<int> RunJobsAsync(IServiceProvider app) =>
+        app.GetRequiredService<JobRunner>().RunUntilIdleAsync("scheduling", cancellationToken: TestContext.Current.CancellationToken);
+
     private static async Task WaitUntilBlockedOnALockAsync(NpgsqlDataSource dataSource)
     {
+        using var bound = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        bound.CancelAfter(TimeSpan.FromSeconds(30));
         while (true)
         {
             await using var command = dataSource.CreateCommand(
                 "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'");
-            if ((long)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken))! > 0)
+            if ((long)(await command.ExecuteScalarAsync(bound.Token))! > 0)
             {
                 return;
             }

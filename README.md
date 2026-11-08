@@ -20,7 +20,7 @@ Claudalisk is an opinionated Claude Code plugin for building .NET + React apps. 
 | `Claudalisk.Jobs` | Background jobs, batch jobs and the jobs router | CLA-0058, CLA-0059, CLA-0060 |
 | `Claudalisk.Jobs.PostgreSql` | The PostgreSQL transport for jobs | CLA-0058 |
 | `Claudalisk.Modules` | `IModule`, `AddModules` and the module catalog: dependency-ordered module registration | CLA-0004 |
-| `Claudalisk.Scheduling` | The scheduler module, which sends commands on a cron schedule | CLA-0061 |
+| `Claudalisk.Scheduling` | The scheduler, which queues commands as jobs on a cron schedule | CLA-0061 |
 
 An AWS SQS transport for jobs is planned. Apps pin exact package versions, and the packages will be published to nuget.org.
 

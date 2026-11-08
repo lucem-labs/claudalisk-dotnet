@@ -1,4 +1,6 @@
 using Claudalisk.Dispatching;
+using Claudalisk.Jobs;
+using Claudalisk.Jobs.PostgreSql;
 using Claudalisk.Modules;
 using Claudalisk.Persistence;
 using Microsoft.Extensions.Configuration;
@@ -70,6 +72,8 @@ public sealed class CatalogModule : IModule
 
 internal sealed record TestSchedule(string Name, string Cron, string Command = "refresh-catalog", string Module = "Catalog", string TimeZone = "UTC", string Arguments = """{"source":"nightly"}""");
 
+internal sealed record TestSettings(bool? Enabled = true, string TickInterval = "00:01:00", bool Workers = false);
+
 internal static class TestApp
 {
     public const string Image = "postgres:17-alpine";
@@ -79,6 +83,14 @@ internal static class TestApp
 
     public static DateTimeOffset Start { get; } = new(2026, 10, 26, 10, 30, 0, TimeSpan.Zero);
 
+    public static async Task<string> CreateEmptyDatabaseAsync()
+    {
+        var admin = await Server.Value;
+        var name = $"scheduling_{Guid.NewGuid():N}";
+        await ExecuteAsync(admin, $"CREATE DATABASE \"{name}\"");
+        return new NpgsqlConnectionStringBuilder(admin) { Database = name }.ConnectionString;
+    }
+
     public static async Task<string> CreateDatabaseAsync()
     {
         var admin = await Server.Value;
@@ -87,33 +99,42 @@ internal static class TestApp
         return new NpgsqlConnectionStringBuilder(admin) { Database = name }.ConnectionString;
     }
 
-    public static ServiceProvider Build(string connectionString, FakeTimeProvider time, Refreshes refreshes, bool enabled, params TestSchedule[] schedules)
+    public static ServiceProvider Build(string connectionString, FakeTimeProvider time, Refreshes refreshes, bool enabled, params TestSchedule[] schedules) =>
+        Services(connectionString, time, refreshes, new TestSettings(enabled), schedules).BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+
+    public static ServiceCollection Services(string connectionString, FakeTimeProvider time, Refreshes refreshes, TestSettings settings, params TestSchedule[] schedules)
     {
-        var settings = new Dictionary<string, string?>
+        var values = new Dictionary<string, string?>
         {
-            ["Scheduling:Enabled"] = enabled ? "true" : "false",
-            ["Scheduling:TickInterval"] = "00:01:00",
+            ["Scheduling:TickInterval"] = settings.TickInterval,
         };
-        for (var i = 0; i < schedules.Length; i++)
+        if (settings.Enabled is { } enabled)
         {
-            settings[$"Scheduling:Schedules:{i}:Name"] = schedules[i].Name;
-            settings[$"Scheduling:Schedules:{i}:Cron"] = schedules[i].Cron;
-            settings[$"Scheduling:Schedules:{i}:Command"] = schedules[i].Command;
-            settings[$"Scheduling:Schedules:{i}:Module"] = schedules[i].Module;
-            settings[$"Scheduling:Schedules:{i}:TimeZone"] = schedules[i].TimeZone;
-            settings[$"Scheduling:Schedules:{i}:Arguments"] = schedules[i].Arguments;
+            values["Scheduling:Enabled"] = enabled ? "true" : "false";
         }
 
-        var configuration = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
+        for (var i = 0; i < schedules.Length; i++)
+        {
+            values[$"Scheduling:Schedules:{i}:Name"] = schedules[i].Name;
+            values[$"Scheduling:Schedules:{i}:Cron"] = schedules[i].Cron;
+            values[$"Scheduling:Schedules:{i}:Command"] = schedules[i].Command;
+            values[$"Scheduling:Schedules:{i}:Module"] = schedules[i].Module;
+            values[$"Scheduling:Schedules:{i}:TimeZone"] = schedules[i].TimeZone;
+            values[$"Scheduling:Schedules:{i}:Arguments"] = schedules[i].Arguments;
+        }
+
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(values).Build();
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddPersistence(connectionString);
         services.AddModules(configuration, new CatalogModule());
         services.AddDispatching();
+        services.AddJobs(options => options.WorkersEnabled = settings.Workers);
+        services.AddPostgreSqlJobs();
         services.AddScheduling(configuration);
         services.AddSingleton<TimeProvider>(time);
         services.AddSingleton(refreshes);
-        return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        return services;
     }
 
     public static async Task StartOrExplainAsync(Func<Task> start)

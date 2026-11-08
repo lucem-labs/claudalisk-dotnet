@@ -2,13 +2,15 @@
   <PropertyGroup>
     <IsPackable>true</IsPackable>
     <PackageId>Claudalisk.Scheduling</PackageId>
-    <Description>Cron schedules from configuration that send commands to modules through the dispatcher, once per scheduled time.</Description>
+    <Description>Cron schedules from configuration that queue commands as jobs of the scheduler's own jobs module, once per scheduled time.</Description>
     <PackageTags>claudalisk;scheduling;scheduler;cron;recurring-jobs;modular-monolith</PackageTags>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Cronos" />
     <InternalsVisibleTo Include="Claudalisk.Scheduling.Tests" />
     <ProjectReference Include="..\Claudalisk.Dispatching\Claudalisk.Dispatching.csproj" />
+    <ProjectReference Include="..\Claudalisk.Jobs\Claudalisk.Jobs.csproj" />
+    <ProjectReference Include="..\Claudalisk.Jobs.PostgreSql\Claudalisk.Jobs.PostgreSql.csproj" />
     <ProjectReference Include="..\Claudalisk.Modules\Claudalisk.Modules.csproj" />
     <ProjectReference Include="..\Claudalisk.Persistence\Claudalisk.Persistence.csproj" />
   </ItemGroup>
