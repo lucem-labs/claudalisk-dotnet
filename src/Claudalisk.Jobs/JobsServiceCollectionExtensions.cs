@@ -37,8 +37,9 @@ public static class JobsServiceCollectionExtensions
 
         Registry(services);
         services.AddOptions<JobsOptions>().Validate(
-            options => options.CancelCheckInterval > TimeSpan.Zero && options.PruneInterval > TimeSpan.Zero && options.FinishedJobRetention > TimeSpan.Zero,
-            "JobsOptions.CancelCheckInterval, PruneInterval and FinishedJobRetention must be positive.");
+            options => options.CancelCheckInterval > TimeSpan.Zero && options.PruneInterval > TimeSpan.Zero && options.FinishedJobRetention > TimeSpan.Zero
+                && options.RetryAfterMaxDelay > TimeSpan.Zero,
+            "JobsOptions.CancelCheckInterval, PruneInterval, FinishedJobRetention and RetryAfterMaxDelay must be positive.");
         services.TryAddScoped<JobContext>();
         services.TryAddScoped<IJobContext>(provider => provider.GetRequiredService<JobContext>());
         services.TryAddScoped<IJobQueue, JobQueue>();

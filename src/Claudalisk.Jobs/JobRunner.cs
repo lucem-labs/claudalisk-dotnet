@@ -277,10 +277,16 @@ public sealed partial class JobRunner
         }
     }
 
-    private TimeSpan RetryDelay(Exception exception, int attempt)
+    internal TimeSpan RetryDelay(Exception exception, int attempt)
     {
         var backoff = Backoff(attempt);
-        return exception is DependencyUnavailableException { RetryAfter: { } wait } && wait > backoff ? wait : backoff;
+        if (exception is DependencyUnavailableException { RetryAfter: { } wait })
+        {
+            var asked = wait > _options.RetryAfterMaxDelay ? _options.RetryAfterMaxDelay : wait;
+            return asked > backoff ? asked : backoff;
+        }
+
+        return backoff;
     }
 
     private TimeSpan Backoff(int attempt)
