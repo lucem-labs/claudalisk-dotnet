@@ -10,11 +10,14 @@ public static class PersistenceServiceCollectionExtensions
 {
     public const string MigrationsHistoryTable = "__EFMigrationsHistory";
 
+    internal const string MissingPersistenceMessage =
+        "Module DbContexts need the scope's connection from AddPersistence. Call AddPersistence when registering services.";
+
     public static IServiceCollection AddPersistence(this IServiceCollection services, string connectionString)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
-        var existing = services.Select(descriptor => descriptor.ImplementationInstance).OfType<PersistenceRegistration>().SingleOrDefault();
+        var existing = Registered<PersistenceRegistration>(services).SingleOrDefault();
         if (existing is not null)
         {
             if (existing.ConnectionString != connectionString)
@@ -48,8 +51,7 @@ public static class PersistenceServiceCollectionExtensions
             throw new ArgumentException("A baseline replaces at least one migration.", nameof(replaces));
         }
 
-        var existing = services.Select(descriptor => descriptor.ImplementationInstance).OfType<MigrationBaseline>()
-            .SingleOrDefault(baseline => baseline.Schema == schema);
+        var existing = Registered<MigrationBaseline>(services).SingleOrDefault(baseline => baseline.Schema == schema);
         if (existing is null)
         {
             services.AddSingleton(new MigrationBaseline(schema, migration, [.. replaces]));
@@ -75,8 +77,7 @@ public static class PersistenceServiceCollectionExtensions
             throw new ArgumentException("A migration history moves to another schema.", nameof(to));
         }
 
-        var existing = services.Select(descriptor => descriptor.ImplementationInstance).OfType<MovedMigrationHistory>()
-            .SingleOrDefault(move => move.To == to || move.From == from);
+        var existing = Registered<MovedMigrationHistory>(services).FirstOrDefault(move => move.To == to || move.From == from);
         if (existing is null)
         {
             services.AddSingleton(new MovedMigrationHistory(from, to));
@@ -97,7 +98,7 @@ public static class PersistenceServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentException.ThrowIfNullOrWhiteSpace(schema);
-        var registrations = services.Select(descriptor => descriptor.ImplementationInstance).OfType<ModuleDbContextRegistration>().ToList();
+        var registrations = Registered<ModuleDbContextRegistration>(services).ToList();
         var existing = registrations.SingleOrDefault(registration => registration.ContextType == typeof(TContext));
         if (existing is not null)
         {
@@ -141,7 +142,7 @@ public static class PersistenceServiceCollectionExtensions
         catch (InvalidOperationException exception)
         {
             throw new InvalidOperationException(
-                $"{ModuleContextGuard.PoolingMessage} Call AddPersistence first, and resolve module DbContexts from a scope.", exception);
+                $"{ModuleContextGuard.PoolingMessage} Resolve module DbContexts from a scope.", exception);
         }
 
         ((IDbContextOptionsBuilderInfrastructure)options).AddOrUpdateExtension(new ModuleContextGuard(schema));
@@ -151,8 +152,8 @@ public static class PersistenceServiceCollectionExtensions
             .AddInterceptors(new EnlistInSessionTransaction(session));
     }
 
-    internal const string MissingPersistenceMessage =
-        "Module DbContexts need the scope's connection from AddPersistence. Call AddPersistence when registering services.";
+    private static IEnumerable<T> Registered<T>(IServiceCollection services) =>
+        services.Select(descriptor => descriptor.ImplementationInstance).OfType<T>();
 
     private static string Describe(string migration, IEnumerable<string> replaces) =>
         $"{migration} replacing {string.Join(", ", replaces)}";

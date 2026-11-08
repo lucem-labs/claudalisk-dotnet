@@ -90,6 +90,18 @@ public sealed class MigrationHistoryMoveTests
         Assert.Single(services, descriptor => descriptor.ImplementationInstance is MovedMigrationHistory);
     }
 
+    [Fact]
+    public void AMoveThatConflictsWithTwoEarlierMovesNamesOneOfThem()
+    {
+        var services = new ServiceCollection()
+            .AddMovedMigrationHistory("shop", "orders")
+            .AddMovedMigrationHistory("till", "billing");
+
+        var conflict = Assert.Throws<InvalidOperationException>(() => services.AddMovedMigrationHistory("shop", "billing"));
+
+        Assert.Contains("is already registered and conflicts with the move from 'shop' to 'billing'", conflict.Message);
+    }
+
     private static async Task MigrateAsync(string database, bool moved)
     {
         await using var app = PostgresServer.CreateApp(database, services =>
