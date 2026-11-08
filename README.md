@@ -8,7 +8,7 @@ The .NET packages behind [Claudalisk](https://github.com/lucem-labs/claudalisk) 
 
 Claudalisk is an opinionated Claude Code plugin for building .NET + React apps. Its standards live as architecture decision records in the [Claudalisk repository](https://github.com/lucem-labs/claudalisk/tree/main/adr). This repository holds the infrastructure code those standards need, so that every app uses one tested implementation instead of its own copy.
 
-> **Status: early.** Nothing is published yet. The design is tracked in the [issues](https://github.com/lucem-labs/claudalisk-dotnet/issues).
+> **Status: early.** Alpha versions are on [nuget.org](https://www.nuget.org/packages/Claudalisk.Domain), starting at `0.1.0-alpha.1`, and the API can still change. The design is tracked in the [issues](https://github.com/lucem-labs/claudalisk-dotnet/issues).
 
 ## Packages
 
@@ -25,7 +25,7 @@ Claudalisk is an opinionated Claude Code plugin for building .NET + React apps. 
 | [`Claudalisk.Modules`](https://github.com/lucem-labs/claudalisk-dotnet/blob/main/src/Claudalisk.Modules/README.md) | `IModule`, `AddClaudaliskModules` and the module catalog: dependency-ordered module registration | CLA-0004 |
 | [`Claudalisk.Scheduling`](https://github.com/lucem-labs/claudalisk-dotnet/blob/main/src/Claudalisk.Scheduling/README.md) | The scheduler, which queues commands as jobs in its own jobs module on a cron schedule; it depends on the jobs library and a jobs transport | CLA-0061 |
 
-An AWS SQS transport for jobs is planned. Apps pin exact package versions, and the packages will be published to nuget.org.
+An AWS SQS transport for jobs is planned. Apps pin exact package versions.
 
 ## Licence
 
