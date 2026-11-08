@@ -44,7 +44,7 @@ internal sealed partial class Dispatcher : IDispatcher
                 $"'{message.GetType().FullName}' was sent for a '{typeof(TResult).FullName}', but its handler returns '{handler.ResultType.FullName}'.");
         }
 
-        return (TResult)(await SendAsync(message, cancellationToken))!;
+        return (TResult)(await SendAsync(message, cancellationToken).ConfigureAwait(false))!;
     }
 
     public async ValueTask<object?> SendAsync(object message, CancellationToken cancellationToken = default)
@@ -63,10 +63,10 @@ internal sealed partial class Dispatcher : IDispatcher
             if (kind == MessageKind.Command && frame.IsTopLevel && _scope.GetService<IUnitOfWork>() is not { IsActive: true })
             {
                 var outer = _steps.Where(step => step.Order < PipelineOrder.Retry);
-                return await Run(context, outer, token => AttemptsAsync(context, handler, invoke, token), cancellationToken);
+                return await Run(context, outer, token => AttemptsAsync(context, handler, invoke, token), cancellationToken).ConfigureAwait(false);
             }
 
-            return await Run(context, _steps, token => handler.InvokeAsync(_scope, invoke, message, token), cancellationToken);
+            return await Run(context, _steps, token => handler.InvokeAsync(_scope, invoke, message, token), cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -83,7 +83,7 @@ internal sealed partial class Dispatcher : IDispatcher
         {
             var context = new MessageContext(message, message.GetType(), typeof(TResult), kind);
             var outer = _steps.Where(step => step.Order < PipelineOrder.Retry);
-            var result = await Run(context, outer, async token => await inner(token), cancellationToken);
+            var result = await Run(context, outer, async token => await inner(token).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
             return (TResult)result!;
         }
         finally
@@ -106,7 +106,7 @@ internal sealed partial class Dispatcher : IDispatcher
                 var inner = attemptScope.ServiceProvider.GetServices<IPipelineStep>()
                     .Where(step => step.Order > PipelineOrder.Retry)
                     .OrderBy(step => step.Order);
-                return await Run(context, inner, token => handler.InvokeAsync(attemptScope.ServiceProvider, invoke, context.Message, token), cancellationToken);
+                return await Run(context, inner, token => handler.InvokeAsync(attemptScope.ServiceProvider, invoke, context.Message, token), cancellationToken).ConfigureAwait(false);
             }
             catch (ConcurrencyConflictException) when (attempt < _options.ConcurrencyAttempts && !cancellationToken.IsCancellationRequested)
             {
@@ -114,7 +114,7 @@ internal sealed partial class Dispatcher : IDispatcher
             }
             finally
             {
-                await DisposeQuietlyAsync(attemptScope, context.MessageType.Name);
+                await DisposeQuietlyAsync(attemptScope, context.MessageType.Name).ConfigureAwait(false);
             }
         }
     }
@@ -123,7 +123,7 @@ internal sealed partial class Dispatcher : IDispatcher
     {
         try
         {
-            await attemptScope.DisposeAsync();
+            await attemptScope.DisposeAsync().ConfigureAwait(false);
         }
         catch (Exception exception)
         {
@@ -199,7 +199,7 @@ internal sealed partial class Dispatcher : IDispatcher
 
     private static async Task<object?> InvokeAsync<TMessage, TResult>(object handler, object message, CancellationToken cancellationToken)
         where TMessage : notnull =>
-        await ((IHandler<TMessage, TResult>)handler).HandleAsync((TMessage)message, cancellationToken);
+        await ((IHandler<TMessage, TResult>)handler).HandleAsync((TMessage)message, cancellationToken).ConfigureAwait(false);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Command {Message} lost a concurrency race on attempt {Attempt} of {Attempts}; trying again")]
     private static partial void LogRetrying(ILogger logger, string message, int attempt, int attempts);

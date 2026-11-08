@@ -45,7 +45,7 @@ public sealed partial class JobRunner
     public async Task<int> RunUntilIdleAsync(string module, string lane = JobOptions.DefaultLane, CancellationToken cancellationToken = default)
     {
         var ran = 0;
-        while (await RunNextAsync(module, lane, cancellationToken))
+        while (await RunNextAsync(module, lane, cancellationToken).ConfigureAwait(false))
         {
             ran++;
         }
@@ -56,13 +56,13 @@ public sealed partial class JobRunner
     public async Task<bool> RunNextAsync(string module, string lane = JobOptions.DefaultLane, CancellationToken cancellationToken = default)
     {
         var jobs = _registry.Find(module) ?? throw new InvalidOperationException($"Module '{module}' has no jobs.");
-        var claimed = await _transport.ClaimAsync(jobs, lane, cancellationToken);
+        var claimed = await _transport.ClaimAsync(jobs, lane, cancellationToken).ConfigureAwait(false);
         if (claimed is null)
         {
             return false;
         }
 
-        await RunAsync(jobs, claimed, cancellationToken);
+        await RunAsync(jobs, claimed, cancellationToken).ConfigureAwait(false);
         return true;
     }
 
@@ -81,7 +81,8 @@ public sealed partial class JobRunner
 
             var payload = JsonSerializer.Deserialize(claimed.Payload, kind.PayloadType, JobQueue.Json)
                 ?? throw new InvalidOperationException($"Job {claimed.Id} has an empty payload.");
-            await using var scope = _scopes.CreateAsyncScope();
+            var scope = _scopes.CreateAsyncScope();
+            await using var scopeDisposal = scope.ConfigureAwait(false);
             var context = scope.ServiceProvider.GetRequiredService<JobContext>();
             context.Start(module, claimed, payload);
             switch (kind.Type)
@@ -91,7 +92,7 @@ public sealed partial class JobRunner
                         ?? throw new InvalidOperationException(
                             $"Job kind '{kind.Name}' is not a command that runs in a unit of work; register AddJobs after AddDispatching and AddPersistence.");
                     var dispatcher = scope.ServiceProvider.GetRequiredService<IDispatcher>();
-                    await unitOfWork.RunAsync(token => dispatcher.SendAsync(payload, token).AsTask(), cancel.Token);
+                    await unitOfWork.RunAsync(token => dispatcher.SendAsync(payload, token).AsTask(), cancel.Token).ConfigureAwait(false);
                     if (!context.Completed)
                     {
                         throw new InvalidOperationException(
@@ -103,13 +104,13 @@ public sealed partial class JobRunner
                     var batch = Batches.GetOrAdd((kind.PayloadType, kind.CheckpointType!), key =>
                         BatchMethod.MakeGenericMethod(key.Payload, key.Checkpoint)
                             .CreateDelegate<Func<IServiceProvider, JobKind, JobContext, object, string?, CancellationToken, Task>>());
-                    await batch(scope.ServiceProvider, kind, context, payload, claimed.Checkpoint, cancel.Token);
+                    await batch(scope.ServiceProvider, kind, context, payload, claimed.Checkpoint, cancel.Token).ConfigureAwait(false);
                     break;
                 case JobKindType.Rebuild:
                     var rebuild = Rebuilds.GetOrAdd((kind.PayloadType, module.Kinds[kind.EventKind!].PayloadType), key =>
                         RebuildMethod.MakeGenericMethod(key.Payload, key.Event)
                             .CreateDelegate<Func<IServiceProvider, JobKind, JobContext, object, CancellationToken, Task>>());
-                    await rebuild(scope.ServiceProvider, kind, context, payload, cancel.Token);
+                    await rebuild(scope.ServiceProvider, kind, context, payload, cancel.Token).ConfigureAwait(false);
                     break;
                 default:
                     var handle = Events.GetOrAdd(kind.PayloadType, key =>
@@ -118,22 +119,22 @@ public sealed partial class JobRunner
                     {
                         await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().RunAsync(async token =>
                         {
-                            await handle(scope.ServiceProvider.GetRequiredService(kind.HandlerType!), payload, token);
-                            await scope.ServiceProvider.GetRequiredService<EventPublisher>().PublishTrackedAsync(token);
-                            await context.CompleteAsync(scope.ServiceProvider.GetRequiredService<IJobWriter>(), token);
-                        }, outerToken);
+                            await handle(scope.ServiceProvider.GetRequiredService(kind.HandlerType!), payload, token).ConfigureAwait(false);
+                            await scope.ServiceProvider.GetRequiredService<EventPublisher>().PublishTrackedAsync(token).ConfigureAwait(false);
+                            await context.CompleteAsync(scope.ServiceProvider.GetRequiredService<IJobWriter>(), token).ConfigureAwait(false);
+                        }, outerToken).ConfigureAwait(false);
                         return true;
-                    }, cancel.Token);
+                    }, cancel.Token).ConfigureAwait(false);
                     break;
             }
         }
         catch (OperationCanceledException) when (stopping.IsCancellationRequested)
         {
-            await _transport.RequeueAsync(module, claimed.Id, CancellationToken.None);
+            await _transport.RequeueAsync(module, claimed.Id, CancellationToken.None).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancel.IsCancellationRequested)
         {
-            await _transport.MarkCanceledAsync(module, claimed.Id, CancellationToken.None);
+            await _transport.MarkCanceledAsync(module, claimed.Id, CancellationToken.None).ConfigureAwait(false);
         }
         catch (JobNoLongerRunningException exception)
         {
@@ -148,26 +149,26 @@ public sealed partial class JobRunner
                 LogJobFailed(_logger, exception, module.Name, claimed.Id, claimed.Kind, claimed.Attempts);
             }
 
-            await _transport.RetryOrFailAsync(module, claimed.Id, error, retry ? RetryDelay(exception, claimed.Attempts) : null, CancellationToken.None);
+            await _transport.RetryOrFailAsync(module, claimed.Id, error, retry ? RetryDelay(exception, claimed.Attempts) : null, CancellationToken.None).ConfigureAwait(false);
         }
         finally
         {
-            await heartbeatStop.CancelAsync();
-            await heartbeat;
-            await cancelWatch;
+            await heartbeatStop.CancelAsync().ConfigureAwait(false);
+            await heartbeat.ConfigureAwait(false);
+            await cancelWatch.ConfigureAwait(false);
         }
     }
 
     public async Task SweepStaleAsync(string module, CancellationToken cancellationToken = default)
     {
         var jobs = _registry.Find(module) ?? throw new InvalidOperationException($"Module '{module}' has no jobs.");
-        await _transport.SweepStaleAsync(jobs, _options.StaleAfter, cancellationToken);
+        await _transport.SweepStaleAsync(jobs, _options.StaleAfter, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<int> PruneAsync(string module, CancellationToken cancellationToken = default)
     {
         var jobs = _registry.Find(module) ?? throw new InvalidOperationException($"Module '{module}' has no jobs.");
-        return await _transport.DeleteFinishedBeforeAsync(jobs, jobs.Retention ?? _options.FinishedJobRetention, cancellationToken);
+        return await _transport.DeleteFinishedBeforeAsync(jobs, jobs.Retention ?? _options.FinishedJobRetention, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task RunBatchesAsync<TCommand, TCheckpoint>(
@@ -184,9 +185,9 @@ public sealed partial class JobRunner
         var checkpoint = stored is null ? null : JsonSerializer.Deserialize<TCheckpoint>(stored, JobQueue.Json);
         await scope.GetRequiredService<IOuterPipeline>().RunAsync(command, MessageKind.Command, async outerToken =>
         {
-            await LoopAsync(outerToken);
+            await LoopAsync(outerToken).ConfigureAwait(false);
             return true;
-        }, cancellationToken);
+        }, cancellationToken).ConfigureAwait(false);
 
         async Task LoopAsync(CancellationToken loopToken)
         {
@@ -196,20 +197,20 @@ public sealed partial class JobRunner
                 BatchStep<TCheckpoint> step;
                 if (handler.WritesNothing(command, checkpoint))
                 {
-                    var computed = await handler.RunBatchAsync(command, checkpoint, loopToken);
+                    var computed = await handler.RunBatchAsync(command, checkpoint, loopToken).ConfigureAwait(false);
                     if (tracker.HasTracked)
                     {
                         throw new InvalidOperationException(
                             $"Job kind '{kind.Name}' changed an aggregate in a batch that writes nothing; write it in the next batch.");
                     }
 
-                    step = await unitOfWork.RunAsync(token => SaveAsync(computed, token), loopToken);
+                    step = await unitOfWork.RunAsync(token => SaveAsync(computed, token), loopToken).ConfigureAwait(false);
                 }
                 else
                 {
                     step = await unitOfWork.RunAsync(
-                        async token => await SaveAsync(await handler.RunBatchAsync(command, checkpoint, token), token),
-                        loopToken);
+                        async token => await SaveAsync(await handler.RunBatchAsync(command, checkpoint, token).ConfigureAwait(false), token).ConfigureAwait(false),
+                        loopToken).ConfigureAwait(false);
                 }
 
                 if (step.Done)
@@ -223,11 +224,11 @@ public sealed partial class JobRunner
 
         async Task<BatchStep<TCheckpoint>> SaveAsync(BatchStep<TCheckpoint> next, CancellationToken token)
         {
-            await writer.SaveCheckpointAsync(context.JobsModule, context.JobId, JsonSerializer.Serialize(next.Checkpoint, JobQueue.Json), next.Progress, token);
-            await publisher.PublishTrackedAsync(token);
+            await writer.SaveCheckpointAsync(context.JobsModule, context.JobId, JsonSerializer.Serialize(next.Checkpoint, JobQueue.Json), next.Progress, token).ConfigureAwait(false);
+            await publisher.PublishTrackedAsync(token).ConfigureAwait(false);
             if (next.Done)
             {
-                await context.CompleteAsync(writer, token);
+                await context.CompleteAsync(writer, token).ConfigureAwait(false);
             }
 
             return next;
@@ -245,19 +246,19 @@ public sealed partial class JobRunner
         {
             await scope.GetRequiredService<IUnitOfWork>().RunAsync(async token =>
             {
-                var includes = await handler.RebuildAsync((TCommand)payload, token);
-                var deliveries = await writer.LockActiveAsync(context.JobsModule, kind.EventKind!, token);
+                var includes = await handler.RebuildAsync((TCommand)payload, token).ConfigureAwait(false);
+                var deliveries = await writer.LockActiveAsync(context.JobsModule, kind.EventKind!, token).ConfigureAwait(false);
                 var included = deliveries
                     .Where(delivery => includes(JsonSerializer.Deserialize<TEvent>(delivery.Payload, JobQueue.Json)
                         ?? throw new InvalidOperationException($"Delivery {delivery.Id} has an empty payload.")))
                     .Select(delivery => delivery.Id)
                     .ToArray();
-                await writer.MarkSucceededAsync(context.JobsModule, kind.EventKind!, included, token);
-                await publisher.PublishTrackedAsync(token);
-                await context.CompleteAsync(writer, token);
-            }, outerToken);
+                await writer.MarkSucceededAsync(context.JobsModule, kind.EventKind!, included, token).ConfigureAwait(false);
+                await publisher.PublishTrackedAsync(token).ConfigureAwait(false);
+                await context.CompleteAsync(writer, token).ConfigureAwait(false);
+            }, outerToken).ConfigureAwait(false);
             return true;
-        }, cancellationToken);
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     private static Task HandleEventAsync<TEvent>(object handler, object payload, CancellationToken cancellationToken) =>
@@ -268,13 +269,13 @@ public sealed partial class JobRunner
         using var timer = new PeriodicTimer(_options.HeartbeatInterval, _time);
         try
         {
-            while (await timer.WaitForNextTickAsync(stop))
+            while (await timer.WaitForNextTickAsync(stop).ConfigureAwait(false))
             {
                 try
                 {
-                    if (await _transport.HeartbeatAsync(module, id, stop))
+                    if (await _transport.HeartbeatAsync(module, id, stop).ConfigureAwait(false))
                     {
-                        await cancel.CancelAsync();
+                        await cancel.CancelAsync().ConfigureAwait(false);
                     }
                 }
                 catch (Exception exception) when (exception is not OperationCanceledException || !stop.IsCancellationRequested)
@@ -293,13 +294,13 @@ public sealed partial class JobRunner
         using var timer = new PeriodicTimer(_options.CancelCheckInterval, _time);
         try
         {
-            while (await timer.WaitForNextTickAsync(stop))
+            while (await timer.WaitForNextTickAsync(stop).ConfigureAwait(false))
             {
                 try
                 {
-                    if (await _transport.IsCancelRequestedAsync(module, id, stop))
+                    if (await _transport.IsCancelRequestedAsync(module, id, stop).ConfigureAwait(false))
                     {
-                        await cancel.CancelAsync();
+                        await cancel.CancelAsync().ConfigureAwait(false);
                         return;
                     }
                 }

@@ -43,9 +43,10 @@ internal sealed partial class MigrationHistoryMoves(IServiceProvider services)
         {
             foreach (var move in moves)
             {
-                await using var context = new DbContext(new DbContextOptionsBuilder<DbContext>().UseModuleSchema(services, move.To).Options);
-                var from = await HistoryExistsAsync(context, move.From, token);
-                var to = await HistoryExistsAsync(context, move.To, token);
+                var context = new DbContext(new DbContextOptionsBuilder<DbContext>().UseModuleSchema(services, move.To).Options);
+                await using var contextDisposal = context.ConfigureAwait(false);
+                var from = await HistoryExistsAsync(context, move.From, token).ConfigureAwait(false);
+                var to = await HistoryExistsAsync(context, move.To, token).ConfigureAwait(false);
                 if (from && to)
                 {
                     throw new MigrationHistoryMoveException(
@@ -58,10 +59,10 @@ internal sealed partial class MigrationHistoryMoves(IServiceProvider services)
                 }
 
                 var sql = MoveSql(move);
-                await context.Database.ExecuteSqlRawAsync(sql, token);
+                await context.Database.ExecuteSqlRawAsync(sql, token).ConfigureAwait(false);
                 moved.Add(move);
             }
-        }, cancellationToken);
+        }, cancellationToken).ConfigureAwait(false);
 
         foreach (var move in moved)
         {

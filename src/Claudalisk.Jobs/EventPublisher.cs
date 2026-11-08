@@ -39,7 +39,7 @@ internal sealed class EventPublisher(JobsRegistry registry, IJobWriter writer, A
             await writer.InsertAsync(
                 module,
                 new NewJob(subscription.Kind, JsonSerializer.Serialize(integrationEvent, integrationEvent.GetType(), JobQueue.Json), new JobOptions(Lane: subscription.Lane)),
-                cancellationToken);
+                cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -47,10 +47,10 @@ internal sealed class EventPublisher(JobsRegistry registry, IJobWriter writer, A
     {
         foreach (var domainEvent in tracker.TakeEvents())
         {
-            await PublishAsync(domainEvent, cancellationToken);
+            await PublishAsync(domainEvent, cancellationToken).ConfigureAwait(false);
             if (registry.Map(domainEvent) is { } integrationEvent)
             {
-                await PublishAsync(integrationEvent, cancellationToken);
+                await PublishAsync(integrationEvent, cancellationToken).ConfigureAwait(false);
             }
         }
     }

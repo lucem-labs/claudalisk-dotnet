@@ -15,11 +15,11 @@ public sealed class DatabaseInitializer(IServiceProvider services, IEnumerable<M
                 "DatabaseInitializer.MigrateAsync cannot run inside a unit of work, because migrations manage their own transactions. Call it outside IUnitOfWork.RunAsync.");
         }
 
-        await services.GetRequiredService<MigrationHistoryMoves>().MoveAsync(cancellationToken);
-        await services.GetRequiredService<MigrationBaselines>().AdoptAsync(cancellationToken);
+        await services.GetRequiredService<MigrationHistoryMoves>().MoveAsync(cancellationToken).ConfigureAwait(false);
+        await services.GetRequiredService<MigrationBaselines>().AdoptAsync(cancellationToken).ConfigureAwait(false);
         foreach (var registration in Contexts)
         {
-            await Context(registration).Database.MigrateAsync(cancellationToken);
+            await Context(registration).Database.MigrateAsync(cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -28,7 +28,7 @@ public sealed class DatabaseInitializer(IServiceProvider services, IEnumerable<M
         var pending = new List<string>();
         foreach (var registration in Contexts)
         {
-            var migrations = await Context(registration).Database.GetPendingMigrationsAsync(cancellationToken);
+            var migrations = await Context(registration).Database.GetPendingMigrationsAsync(cancellationToken).ConfigureAwait(false);
             pending.AddRange(migrations.Select(migration => $"{registration.Schema}: {migration}"));
         }
 

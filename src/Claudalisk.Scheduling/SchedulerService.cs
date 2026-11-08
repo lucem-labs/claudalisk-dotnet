@@ -27,14 +27,14 @@ internal sealed partial class SchedulerService(Scheduler scheduler, IOptions<Sch
                     announced = true;
                 }
 
-                await scheduler.RunDueAsync(stoppingToken);
+                await scheduler.RunDueAsync(stoppingToken).ConfigureAwait(false);
             }
             catch (Exception exception) when (!stoppingToken.IsCancellationRequested)
             {
                 LogTickFailed(logger, exception);
             }
         }
-        while (await timer.WaitForNextTickAsync(stoppingToken));
+        while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false));
     }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "The scheduler runs {Count} schedules: {Schedules}")]

@@ -11,20 +11,21 @@ internal sealed class UnitOfWork(DbSession session) : IUnitOfWork
         ArgumentNullException.ThrowIfNull(work);
         if (session.Transaction is not null)
         {
-            return await work(cancellationToken);
+            return await work(cancellationToken).ConfigureAwait(false);
         }
 
         if (session.Connection.State != ConnectionState.Open)
         {
-            await session.Connection.OpenAsync(cancellationToken);
+            await session.Connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        await using var transaction = await session.Connection.BeginTransactionAsync(cancellationToken);
+        var transaction = (await session.Connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false));
+        await using var transactionDisposal = transaction.ConfigureAwait(false);
         session.Transaction = transaction;
         try
         {
-            var result = await work(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
+            var result = await work(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
             return result;
         }
         finally

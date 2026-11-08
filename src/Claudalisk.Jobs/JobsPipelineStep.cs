@@ -12,19 +12,19 @@ internal sealed class JobsPipelineStep(JobContext job, EventPublisher publisher,
     {
         if (context.Kind != MessageKind.Command)
         {
-            return await next(cancellationToken);
+            return await next(cancellationToken).ConfigureAwait(false);
         }
 
         _depth++;
         try
         {
-            var result = await next(cancellationToken);
+            var result = await next(cancellationToken).ConfigureAwait(false);
             if (_depth == 1)
             {
-                await publisher.PublishTrackedAsync(cancellationToken);
+                await publisher.PublishTrackedAsync(cancellationToken).ConfigureAwait(false);
                 if (job.IsActive && !job.Completed && ReferenceEquals(context.Message, job.Command))
                 {
-                    await job.CompleteAsync(writer, cancellationToken);
+                    await job.CompleteAsync(writer, cancellationToken).ConfigureAwait(false);
                     job.Completed = true;
                 }
             }

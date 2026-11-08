@@ -6,7 +6,7 @@ internal static class Disposal
     {
         if (instance is IAsyncDisposable asyncDisposable)
         {
-            await asyncDisposable.DisposeAsync();
+            await asyncDisposable.DisposeAsync().ConfigureAwait(false);
         }
         else if (instance is IDisposable disposable)
         {

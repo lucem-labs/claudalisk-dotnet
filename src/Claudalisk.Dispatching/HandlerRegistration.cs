@@ -35,13 +35,13 @@ internal sealed record HandlerRegistration(Type MessageType, Type ResultType, Ty
         var handler = Resolve(scope);
         try
         {
-            return await invoke(handler, message, cancellationToken);
+            return await invoke(handler, message, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             if (IsUnregistered)
             {
-                await Disposal.DisposeAsync(handler);
+                await Disposal.DisposeAsync(handler).ConfigureAwait(false);
             }
         }
     }

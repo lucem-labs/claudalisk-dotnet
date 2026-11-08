@@ -26,7 +26,7 @@ internal sealed class JobQueue(JobsRegistry registry, IJobWriter writer) : IJobQ
             throw new InvalidOperationException($"Module '{module.Name}' has no job lane '{options.Lane}'.");
         }
 
-        var id = await writer.InsertAsync(module, new NewJob(kind.Name, JsonSerializer.Serialize(command, command.GetType(), Json), options), cancellationToken);
+        var id = await writer.InsertAsync(module, new NewJob(kind.Name, JsonSerializer.Serialize(command, command.GetType(), Json), options), cancellationToken).ConfigureAwait(false);
         return Reference(module, id);
     }
 

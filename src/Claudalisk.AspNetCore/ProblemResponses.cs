@@ -30,7 +30,7 @@ internal sealed class ProblemResponses(IOptions<ClaudaliskWebOptions> options) :
                 continue;
             }
 
-            schema ??= await context.GetOrCreateSchemaAsync(typeof(ProblemDetails), null, cancellationToken);
+            schema ??= await context.GetOrCreateSchemaAsync(typeof(ProblemDetails), null, cancellationToken).ConfigureAwait(false);
             operation.Responses[key] = new OpenApiResponse
             {
                 Description = $"{description} Problem type: {ProblemTypes.Resolve(type, options.Value.ProblemTypeBase)}",

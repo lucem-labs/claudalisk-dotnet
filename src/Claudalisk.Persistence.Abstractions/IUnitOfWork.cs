@@ -11,7 +11,7 @@ public interface IUnitOfWork
         ArgumentNullException.ThrowIfNull(work);
         return RunAsync<bool>(async token =>
         {
-            await work(token);
+            await work(token).ConfigureAwait(false);
             return true;
         }, cancellationToken);
     }

@@ -18,7 +18,7 @@ internal sealed class ValidationStep(IServiceProvider scope) : IPipelineStep
             var validators = scope.GetServices(typeof(IValidator<>).MakeGenericType(context.MessageType)).OfType<IValidator>().Concat(created);
             foreach (var validator in validators)
             {
-                var result = await validator.ValidateAsync(new ValidationContext<object>(context.Message), cancellationToken);
+                var result = await validator.ValidateAsync(new ValidationContext<object>(context.Message), cancellationToken).ConfigureAwait(false);
                 foreach (var failure in result.Errors)
                 {
                     var key = CamelCase(failure.PropertyName);
@@ -35,7 +35,7 @@ internal sealed class ValidationStep(IServiceProvider scope) : IPipelineStep
         {
             foreach (var validator in created)
             {
-                await Disposal.DisposeAsync(validator);
+                await Disposal.DisposeAsync(validator).ConfigureAwait(false);
             }
         }
 
@@ -44,7 +44,7 @@ internal sealed class ValidationStep(IServiceProvider scope) : IPipelineStep
             throw new MessageValidationException(context.MessageType, errors.ToDictionary(error => error.Key, error => error.Value.ToArray(), StringComparer.Ordinal));
         }
 
-        return await next(cancellationToken);
+        return await next(cancellationToken).ConfigureAwait(false);
     }
 
     internal static string CamelCase(string propertyName) =>

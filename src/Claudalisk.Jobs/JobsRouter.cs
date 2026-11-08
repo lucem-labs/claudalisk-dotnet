@@ -34,7 +34,7 @@ public static class JobsRouter
         ArgumentNullException.ThrowIfNull(endpoints);
         var jobs = endpoints.MapGroup("/api/jobs/{module}/{id:guid}").WithTags(Tag);
         jobs.MapGet("", async (string module, Guid id, JobsRegistry registry, IJobTransport transport, CancellationToken cancellationToken) =>
-            registry.Find(module) is { } jobsModule && await transport.GetAsync(jobsModule, id, cancellationToken) is { } job
+            registry.Find(module) is { } jobsModule && await transport.GetAsync(jobsModule, id, cancellationToken).ConfigureAwait(false) is { } job
                 ? Results.Ok(Represent(jobsModule, job))
                 : NotFound(module, id))
             .WithName("GetJob")
@@ -42,7 +42,7 @@ public static class JobsRouter
             .ProducesProblem(StatusCodes.Status404NotFound);
         jobs.MapPost("/cancel", async (string module, Guid id, JobsRegistry registry, IJobTransport transport, CancellationToken cancellationToken) =>
         {
-            if (registry.Find(module) is not { } jobsModule || await transport.GetAsync(jobsModule, id, cancellationToken) is not { } job)
+            if (registry.Find(module) is not { } jobsModule || await transport.GetAsync(jobsModule, id, cancellationToken).ConfigureAwait(false) is not { } job)
             {
                 return NotFound(module, id);
             }
@@ -56,7 +56,7 @@ public static class JobsRouter
                     statusCode: StatusCodes.Status409Conflict);
             }
 
-            var canceled = await transport.RequestCancelAsync(jobsModule, id, cancellationToken) ?? job;
+            var canceled = await transport.RequestCancelAsync(jobsModule, id, cancellationToken).ConfigureAwait(false) ?? job;
             return Results.Ok(Represent(jobsModule, canceled));
         })
             .WithName("CancelJob")

@@ -32,13 +32,13 @@ public sealed partial class Scheduler
     public async Task<IReadOnlyList<string>> RunDueAsync(CancellationToken cancellationToken = default)
     {
         var schedules = _schedules.Value;
-        await PruneRemovedOnceAsync(schedules, cancellationToken);
+        await PruneRemovedOnceAsync(schedules, cancellationToken).ConfigureAwait(false);
         var fired = new List<string>();
         foreach (var schedule in schedules)
         {
             try
             {
-                if (await ClaimAsync(schedule, _time.GetUtcNow(), cancellationToken) is { } occurrence)
+                if (await ClaimAsync(schedule, _time.GetUtcNow(), cancellationToken).ConfigureAwait(false) is { } occurrence)
                 {
                     fired.Add(schedule.Name);
                     LogQueued(_logger, schedule.Name, schedule.Command.Name, schedule.Command.Module, occurrence);
@@ -63,9 +63,10 @@ public sealed partial class Scheduler
         try
         {
             var names = schedules.Select(schedule => schedule.Name).ToArray();
-            await using var scope = _scopes.CreateAsyncScope();
+            var scope = _scopes.CreateAsyncScope();
+            await using var scopeDisposal = scope.ConfigureAwait(false);
             var db = scope.ServiceProvider.GetRequiredService<SchedulingDbContext>();
-            var removed = await db.Database.ExecuteSqlInterpolatedAsync($"DELETE FROM scheduling.schedules WHERE name <> ALL({names})", cancellationToken);
+            var removed = await db.Database.ExecuteSqlInterpolatedAsync($"DELETE FROM scheduling.schedules WHERE name <> ALL({names})", cancellationToken).ConfigureAwait(false);
             _pruned = true;
             if (removed > 0)
             {
@@ -80,20 +81,21 @@ public sealed partial class Scheduler
 
     private async Task<DateTimeOffset?> ClaimAsync(Schedule schedule, DateTimeOffset now, CancellationToken cancellationToken)
     {
-        await using var scope = _scopes.CreateAsyncScope();
+        var scope = _scopes.CreateAsyncScope();
+        await using var scopeDisposal = scope.ConfigureAwait(false);
         var db = scope.ServiceProvider.GetRequiredService<SchedulingDbContext>();
         var writer = scope.ServiceProvider.GetRequiredService<IJobWriter>();
         var jobs = _jobs.Find(SchedulingJobs.Name) ?? throw new InvalidOperationException("The scheduler's jobs module is not registered. Call AddScheduling.");
         return await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().RunAsync<DateTimeOffset?>(async token =>
         {
             await db.Database.ExecuteSqlInterpolatedAsync(
-                $"INSERT INTO scheduling.schedules (name, last_fired_timestamp) VALUES ({schedule.Name}, NULL) ON CONFLICT (name) DO NOTHING", token);
+                $"INSERT INTO scheduling.schedules (name, last_fired_timestamp) VALUES ({schedule.Name}, NULL) ON CONFLICT (name) DO NOTHING", token).ConfigureAwait(false);
             var rows = await db.Database
                 .SqlQuery<DateTimeOffset?>($"SELECT last_fired_timestamp AS \"Value\" FROM scheduling.schedules WHERE name = {schedule.Name} FOR UPDATE")
-                .ToListAsync(token);
+                .ToListAsync(token).ConfigureAwait(false);
             if (rows.Single() is not { } last)
             {
-                await SetLastFiredAsync(db, schedule, now, token);
+                await SetLastFiredAsync(db, schedule, now, token).ConfigureAwait(false);
                 return null;
             }
 
@@ -102,12 +104,12 @@ public sealed partial class Scheduler
                 return null;
             }
 
-            await SetLastFiredAsync(db, schedule, occurrence, token);
+            await SetLastFiredAsync(db, schedule, occurrence, token).ConfigureAwait(false);
             var dedupeKey = $"{schedule.Name}:{occurrence.UtcDateTime.ToString("O", CultureInfo.InvariantCulture)}";
             var payload = JsonSerializer.Serialize(schedule.Message, schedule.Command.CommandType, JobQueue.Json);
-            await writer.InsertAsync(jobs, new NewJob(schedule.Command.Name, payload, new JobOptions(DedupeKey: dedupeKey)), token);
+            await writer.InsertAsync(jobs, new NewJob(schedule.Command.Name, payload, new JobOptions(DedupeKey: dedupeKey)), token).ConfigureAwait(false);
             return occurrence;
-        }, cancellationToken);
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     private static Task<int> SetLastFiredAsync(SchedulingDbContext db, Schedule schedule, DateTimeOffset at, CancellationToken cancellationToken) =>

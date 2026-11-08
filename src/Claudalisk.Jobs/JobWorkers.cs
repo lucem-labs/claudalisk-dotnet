@@ -31,11 +31,11 @@ internal sealed partial class JobWorkers(JobRunner runner, IJobTransport transpo
         using var timer = new PeriodicTimer(interval, time);
         try
         {
-            while (await timer.WaitForNextTickAsync(stoppingToken))
+            while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false))
             {
                 try
                 {
-                    await work(stoppingToken);
+                    await work(stoppingToken).ConfigureAwait(false);
                 }
                 catch (Exception exception) when (exception is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
                 {
@@ -55,9 +55,9 @@ internal sealed partial class JobWorkers(JobRunner runner, IJobTransport transpo
         {
             try
             {
-                if (!await runner.RunNextAsync(module.Name, lane, stoppingToken))
+                if (!await runner.RunNextAsync(module.Name, lane, stoppingToken).ConfigureAwait(false))
                 {
-                    await transport.WaitForWorkAsync(module, lane, options.Value.PollInterval, stoppingToken);
+                    await transport.WaitForWorkAsync(module, lane, options.Value.PollInterval, stoppingToken).ConfigureAwait(false);
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -69,7 +69,7 @@ internal sealed partial class JobWorkers(JobRunner runner, IJobTransport transpo
                 LogWorkerFailed(logger, exception, module.Name, lane);
                 try
                 {
-                    await Task.Delay(options.Value.PollInterval, time, stoppingToken);
+                    await Task.Delay(options.Value.PollInterval, time, stoppingToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
                 {

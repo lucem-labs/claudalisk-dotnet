@@ -15,7 +15,7 @@ internal sealed partial class LoggingStep(IServiceProvider scope) : IPipelineSte
         LogHandling(_logger, context.Kind, context.MessageType.Name);
         try
         {
-            var result = await next(cancellationToken);
+            var result = await next(cancellationToken).ConfigureAwait(false);
             LogHandled(_logger, context.Kind, context.MessageType.Name);
             return result;
         }

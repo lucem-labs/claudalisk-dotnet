@@ -44,25 +44,27 @@ internal sealed partial class MigrationBaselines(IServiceProvider services)
         var adopted = new List<MigrationBaseline>();
         await services.GetRequiredService<IUnitOfWork>().RunAsync(async token =>
         {
-            await using (var locking = HistoryContext(baselines[0].Schema))
+            var locking = HistoryContext(baselines[0].Schema);
+            await using (locking.ConfigureAwait(false))
             {
-                await locking.Database.ExecuteSqlRawAsync($"SELECT pg_advisory_xact_lock({AdvisoryLockKey})", token);
+                await locking.Database.ExecuteSqlRawAsync($"SELECT pg_advisory_xact_lock({AdvisoryLockKey})", token).ConfigureAwait(false);
             }
 
-            var adopt = await PlanAsync(token);
+            var adopt = await PlanAsync(token).ConfigureAwait(false);
             foreach (var (baseline, applied) in adopt)
             {
-                await using var context = HistoryContext(baseline.Schema);
+                var context = HistoryContext(baseline.Schema);
+                await using var contextDisposal = context.ConfigureAwait(false);
                 var history = context.GetService<IHistoryRepository>();
                 foreach (var migration in applied)
                 {
-                    await context.Database.ExecuteSqlRawAsync(history.GetDeleteScript(migration), token);
+                    await context.Database.ExecuteSqlRawAsync(history.GetDeleteScript(migration), token).ConfigureAwait(false);
                 }
 
-                await context.Database.ExecuteSqlRawAsync(history.GetInsertScript(new HistoryRow(baseline.Migration, ProductInfo.GetVersion())), token);
+                await context.Database.ExecuteSqlRawAsync(history.GetInsertScript(new HistoryRow(baseline.Migration, ProductInfo.GetVersion())), token).ConfigureAwait(false);
                 adopted.Add(baseline);
             }
-        }, cancellationToken);
+        }, cancellationToken).ConfigureAwait(false);
 
         foreach (var baseline in adopted)
         {
@@ -78,11 +80,12 @@ internal sealed partial class MigrationBaselines(IServiceProvider services)
         var adopt = new List<(MigrationBaseline, List<string>)>();
         foreach (var baseline in baselines)
         {
-            await using var context = HistoryContext(baseline.Schema);
-            var applied = await AppliedAsync(context, baseline.Schema, cancellationToken);
+            var context = HistoryContext(baseline.Schema);
+            await using var contextDisposal = context.ConfigureAwait(false);
+            var applied = await AppliedAsync(context, baseline.Schema, cancellationToken).ConfigureAwait(false);
             if (applied is not { Count: > 0 })
             {
-                await EnsureFreshAsync(context, baseline, cancellationToken);
+                await EnsureFreshAsync(context, baseline, cancellationToken).ConfigureAwait(false);
                 continue;
             }
 
@@ -139,21 +142,21 @@ internal sealed partial class MigrationBaselines(IServiceProvider services)
         var table = $"{MigrationHistoryMoves.Quote(schema)}.\"{PersistenceServiceCollectionExtensions.MigrationsHistoryTable}\"";
         var exists = await context.Database
             .SqlQuery<bool>($"SELECT to_regclass({table}) IS NOT NULL AS \"Value\"")
-            .SingleAsync(cancellationToken);
+            .SingleAsync(cancellationToken).ConfigureAwait(false);
         if (!exists)
         {
             return null;
         }
 
         var history = context.GetService<IHistoryRepository>();
-        return (await history.GetAppliedMigrationsAsync(cancellationToken)).Select(row => row.MigrationId).ToList();
+        return (await history.GetAppliedMigrationsAsync(cancellationToken).ConfigureAwait(false)).Select(row => row.MigrationId).ToList();
     }
 
     private static async Task EnsureFreshAsync(DbContext context, MigrationBaseline baseline, CancellationToken cancellationToken)
     {
         var tables = await context.Database
             .SqlQuery<long>($"SELECT count(*)::bigint AS \"Value\" FROM pg_catalog.pg_class AS c JOIN pg_catalog.pg_namespace AS n ON n.oid = c.relnamespace WHERE n.nspname = {baseline.Schema} AND c.relkind IN ('r', 'p', 'v', 'm', 'f') AND c.relname <> {PersistenceServiceCollectionExtensions.MigrationsHistoryTable}")
-            .SingleAsync(cancellationToken);
+            .SingleAsync(cancellationToken).ConfigureAwait(false);
         if (tables > 0)
         {
             throw new MigrationBaselineException(

@@ -23,7 +23,7 @@ public static partial class HealthEndpoint
                 ILoggerFactory loggerFactory,
                 CancellationToken cancellationToken) =>
             {
-                if (await database.CanConnectAsync(cancellationToken))
+                if (await database.CanConnectAsync(cancellationToken).ConfigureAwait(false))
                 {
                     return Results.Ok(new HealthResponse(
                         "ok",

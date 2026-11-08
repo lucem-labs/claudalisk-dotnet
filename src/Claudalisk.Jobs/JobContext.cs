@@ -37,7 +37,7 @@ internal sealed class JobContext(IJobTransport transport) : IJobContext
 
     public async Task CompleteAsync(IJobWriter writer, CancellationToken cancellationToken)
     {
-        if (!await writer.CompleteAsync(JobsModule, JobId, Attempt, ResultLink, cancellationToken))
+        if (!await writer.CompleteAsync(JobsModule, JobId, Attempt, ResultLink, cancellationToken).ConfigureAwait(false))
         {
             throw new JobNoLongerRunningException(JobsModule.Name, JobId, Attempt);
         }

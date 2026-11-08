@@ -44,7 +44,7 @@ internal sealed partial class ProblemDetailsExceptionHandler(
             HttpContext = httpContext,
             ProblemDetails = mapping.Problem,
             Exception = exception,
-        });
+        }).ConfigureAwait(false);
     }
 
     internal static ProblemMapping ProblemFor(Exception exception, ModuleCatalog? catalog, TimeSpan defaultRetryAfter, Uri? typeBase)
