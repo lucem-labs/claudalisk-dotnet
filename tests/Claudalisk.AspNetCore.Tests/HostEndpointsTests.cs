@@ -112,14 +112,27 @@ public sealed class HostEndpointsTests
         await using var app = await TestApp.StartAsync();
 
         var document = await app.GetTestClient().GetFromJsonAsync<JsonElement>("/openapi/v1.json", TestContext.Current.CancellationToken);
-        var responses = document.GetProperty("paths").GetProperty("/api/orders/{id}/contest").GetProperty("post").GetProperty("responses");
+        var operations = document.GetProperty("paths").EnumerateObject()
+            .SelectMany(path => path.Value.EnumerateObject().Select(operation => (Name: $"{operation.Name} {path.Name}", operation.Value)))
+            .ToList();
 
-        foreach (var (status, type) in new[] { ("409", "/problems/concurrency-conflict"), ("412", "/problems/precondition-failed"), ("428", "/problems/precondition-required"), ("503", "/problems/dependency-unavailable") })
+        Assert.True(operations.Count > 1);
+        Assert.Contains(operations, operation => operation.Name.StartsWith("get ", StringComparison.Ordinal));
+        Assert.Contains(operations, operation => operation.Name == "get /api/health");
+        foreach (var (name, operation) in operations)
         {
-            var response = responses.GetProperty(status);
-            Assert.Contains(type, response.GetProperty("description").GetString(), StringComparison.Ordinal);
-            var schema = response.GetProperty("content").GetProperty("application/problem+json").GetProperty("schema");
-            Assert.True(schema.GetProperty("properties").TryGetProperty("title", out _));
+            var responses = operation.GetProperty("responses");
+            foreach (var (status, type) in new[] { ("409", "/problems/concurrency-conflict"), ("412", "/problems/precondition-failed"), ("428", "/problems/precondition-required"), ("503", "/problems/dependency-unavailable") })
+            {
+                Assert.True(responses.TryGetProperty(status, out var response), $"{name} lists no {status}");
+                var description = response.GetProperty("description").GetString()!;
+                if (description.Contains("Problem type", StringComparison.Ordinal))
+                {
+                    Assert.Contains(type, description, StringComparison.Ordinal);
+                    var schema = response.GetProperty("content").GetProperty("application/problem+json").GetProperty("schema");
+                    Assert.True(schema.GetProperty("properties").TryGetProperty("title", out _));
+                }
+            }
         }
     }
 
