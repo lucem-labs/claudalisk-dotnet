@@ -33,7 +33,8 @@ internal sealed class PostgreSqlJobTransport(NpgsqlDataSource dataSource) : IJob
         await using var claimDisposal = claim.ConfigureAwait(false);
         claim.Parameters.AddWithValue("lane", lane);
         ClaimedJob? claimed = null;
-        await using (var reader = (await claim.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false)).ConfigureAwait(false))
+        var reader = await claim.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using (reader.ConfigureAwait(false))
         {
             if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
@@ -88,7 +89,8 @@ internal sealed class PostgreSqlJobTransport(NpgsqlDataSource dataSource) : IJob
     {
         var connection = (await dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false));
         await using var connectionDisposal = connection.ConfigureAwait(false);
-        await using (var listen = new NpgsqlCommand($"LISTEN {JobsTable.Channel(module.Schema)}", connection).ConfigureAwait(false))
+        var listen = new NpgsqlCommand($"LISTEN {JobsTable.Channel(module.Schema)}", connection);
+        await using (listen.ConfigureAwait(false))
         {
             await listen.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -235,7 +237,8 @@ internal sealed class PostgreSqlJobTransport(NpgsqlDataSource dataSource) : IJob
         page.Parameters.AddWithValue("offset", (long)(query.Page - 1) * query.PageSize);
         page.Parameters.AddWithValue("limit", query.PageSize);
         var runs = new List<JobRun>();
-        await using (var reader = (await page.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false)).ConfigureAwait(false))
+        var reader = await page.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using (reader.ConfigureAwait(false))
         {
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {

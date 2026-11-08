@@ -51,12 +51,13 @@ internal sealed class PostgreSqlJobWriter(IScopeConnection scope) : IJobWriter
             await supersede.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        await using var insert = (await CommandAsync(transaction,
+        var insert = await CommandAsync(transaction,
             $"""
             INSERT INTO {table} (id, kind, payload, lane, status, max_attempts, dedupe_key, not_before)
             VALUES (@id, @kind, @payload::jsonb, @lane, 'queued', @max, @key, coalesce(@notBefore, now()));
             SELECT pg_notify('{JobsTable.Channel(module.Schema)}', @lane);
-            """, cancellationToken).ConfigureAwait(false)).ConfigureAwait(false);
+            """, cancellationToken).ConfigureAwait(false);
+        await using var insertDisposal = insert.ConfigureAwait(false);
         insert.Parameters.AddWithValue("id", id);
         insert.Parameters.AddWithValue("kind", job.Kind);
         insert.Parameters.AddWithValue("payload", job.Payload);
