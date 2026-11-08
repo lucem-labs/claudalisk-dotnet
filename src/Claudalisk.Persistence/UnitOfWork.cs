@@ -27,7 +27,7 @@ internal sealed class UnitOfWork(DbSession session) : IUnitOfWork
         }
         finally
         {
-            session.LastFinishedTransaction = transaction;
+            session.ReleaseEnlistedContexts();
             session.Transaction = null;
         }
     }

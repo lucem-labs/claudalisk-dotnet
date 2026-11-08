@@ -192,6 +192,50 @@ public sealed class UnitOfWorkTests
     }
 
     [Fact]
+    public async Task AContextCanBeginItsOwnTransactionAfterAUnitOfWork()
+    {
+        await using var app = await PostgresServer.CreateAppAsync();
+        await using (var scope = app.CreateAsyncScope())
+        {
+            var (unitOfWork, orders, _) = Resolve(scope.ServiceProvider);
+            var db = scope.ServiceProvider.GetRequiredService<OrdersDbContext>();
+            await unitOfWork.RunAsync(token => orders.PlaceAsync(Guid.NewGuid(), "A-1", token), TestContext.Current.CancellationToken);
+
+            await using var own = await db.Database.BeginTransactionAsync(TestContext.Current.CancellationToken);
+            db.Orders.Add(new Order { Id = Guid.NewGuid(), Reference = "A-2", Version = 1 });
+            await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+            await own.CommitAsync(TestContext.Current.CancellationToken);
+        }
+
+        Assert.Equal(new Counts(2, 0, 0), await CountAsync(app));
+    }
+
+    [Fact]
+    public async Task AContextCanBeginItsOwnTransactionAfterARolledBackUnitOfWork()
+    {
+        await using var app = await PostgresServer.CreateAppAsync();
+        await using (var scope = app.CreateAsyncScope())
+        {
+            var (unitOfWork, orders, billing) = Resolve(scope.ServiceProvider);
+            var db = scope.ServiceProvider.GetRequiredService<OrdersDbContext>();
+            var orderId = Guid.NewGuid();
+            await Assert.ThrowsAsync<DbUpdateException>(() => unitOfWork.RunAsync(async token =>
+            {
+                await orders.PlaceAsync(orderId, "A-1", token);
+                await billing.ChargeAsync(orderId, -5m, token);
+            }, TestContext.Current.CancellationToken));
+            db.ChangeTracker.Clear();
+
+            await using var own = await db.Database.BeginTransactionAsync(TestContext.Current.CancellationToken);
+            db.Orders.Add(new Order { Id = Guid.NewGuid(), Reference = "A-2", Version = 1 });
+            await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+            await own.CommitAsync(TestContext.Current.CancellationToken);
+        }
+
+        Assert.Equal(new Counts(1, 0, 0), await CountAsync(app));
+    }
+
+    [Fact]
     public async Task QueuedWorkCommitsAndRollsBackWithTheData()
     {
         await using var app = await PostgresServer.CreateAppAsync();
@@ -269,25 +313,22 @@ public sealed class UnitOfWorkTests
     }
 
     [Fact]
-    public async Task ALongLivedScopeRemembersOnlyTheLastFinishedTransaction()
+    public async Task ALongLivedScopeKeepsNoEnlistedContextsBetweenUnitsOfWork()
     {
         await using var app = await PostgresServer.CreateAppAsync();
         await using var scope = app.CreateAsyncScope();
         var (unitOfWork, orders, _) = Resolve(scope.ServiceProvider);
         var session = scope.ServiceProvider.GetRequiredService<DbSession>();
 
-        NpgsqlTransaction? last = null;
         for (var i = 0; i < 3; i++)
         {
             await unitOfWork.RunAsync(async token =>
             {
-                last = session.Transaction;
                 await orders.PlaceAsync(Guid.NewGuid(), $"A-{i}", token);
+                Assert.Single(session.EnlistedContexts);
             }, TestContext.Current.CancellationToken);
+            Assert.Empty(session.EnlistedContexts);
         }
-
-        Assert.NotNull(last);
-        Assert.Same(last, session.LastFinishedTransaction);
     }
 
     [Fact]
@@ -316,7 +357,7 @@ public sealed class UnitOfWorkTests
         await Assert.ThrowsAsync<ArgumentNullException>(
             () => unitOfWork.RunAsync((Func<CancellationToken, Task>)null!, TestContext.Current.CancellationToken));
 
-        Assert.Null(scope.ServiceProvider.GetRequiredService<DbSession>().LastFinishedTransaction);
+        Assert.Empty(scope.ServiceProvider.GetRequiredService<DbSession>().EnlistedContexts);
     }
 
     [Fact]
