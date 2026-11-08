@@ -9,7 +9,22 @@ namespace Claudalisk.Persistence;
 
 public sealed record MigrationBaseline(string Schema, string Migration, IReadOnlyList<string> Replaces);
 
-public sealed class MigrationBaselineException(string message) : InvalidOperationException(message);
+public sealed class MigrationBaselineException : InvalidOperationException
+{
+    public MigrationBaselineException()
+    {
+    }
+
+    public MigrationBaselineException(string message)
+        : base(message)
+    {
+    }
+
+    public MigrationBaselineException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+    }
+}
 
 public sealed partial class MigrationBaselines(IServiceProvider services)
 {

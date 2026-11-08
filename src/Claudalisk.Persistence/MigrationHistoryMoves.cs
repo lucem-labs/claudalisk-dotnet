@@ -8,7 +8,22 @@ namespace Claudalisk.Persistence;
 
 public sealed record MovedMigrationHistory(string From, string To);
 
-public sealed class MigrationHistoryMoveException(string message) : InvalidOperationException(message);
+public sealed class MigrationHistoryMoveException : InvalidOperationException
+{
+    public MigrationHistoryMoveException()
+    {
+    }
+
+    public MigrationHistoryMoveException(string message)
+        : base(message)
+    {
+    }
+
+    public MigrationHistoryMoveException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+    }
+}
 
 public sealed partial class MigrationHistoryMoves(IServiceProvider services)
 {
