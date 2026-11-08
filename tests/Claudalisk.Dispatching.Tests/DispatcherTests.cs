@@ -175,7 +175,7 @@ public sealed class DispatcherTests
         var gate = app.GetRequiredService<Gate>();
 
         var send = scope.ServiceProvider.GetRequiredService<IDispatcher>().SendAsync<int>(new GateQuery(), cancellation.Token);
-        await gate.Entered.Task.WaitAsync(TestContext.Current.CancellationToken);
+        await gate.Entered.Task.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
         await cancellation.CancelAsync();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => send);
 

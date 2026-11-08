@@ -22,6 +22,6 @@ internal sealed class DispatchRegistryFactory(IServiceCollection services)
             snapshot = _snapshot!;
         }
 
-        return new DispatchRegistry(snapshot, provider);
+        return new DispatchRegistry(snapshot);
     }
 }

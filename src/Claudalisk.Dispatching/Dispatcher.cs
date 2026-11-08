@@ -27,6 +27,7 @@ internal sealed partial class Dispatcher : IDispatcher
         _scope = scope;
         _registry = registry;
         _steps = [.. steps.OrderBy(step => step.Order)];
+        PipelineSteps.RejectRetrySlot(_steps);
         _scopeFactory = scopeFactory;
         _options = options.Value;
         _logger = scope.GetService<ILogger<IDispatcher>>() ?? NullLogger<IDispatcher>.Instance;
@@ -59,7 +60,7 @@ internal sealed partial class Dispatcher : IDispatcher
             var context = new MessageContext(message, messageType, handler.ResultType, kind);
             var invoke = Invokers.GetOrAdd((messageType, handler.ResultType), key =>
                 InvokeMethod.MakeGenericMethod(key.Message, key.Result).CreateDelegate<Func<object, object, CancellationToken, Task<object?>>>());
-            if (kind == MessageKind.Command && frame.Previous is null && _scope.GetService<IUnitOfWork>() is not { IsActive: true })
+            if (kind == MessageKind.Command && frame.IsTopLevel && _scope.GetService<IUnitOfWork>() is not { IsActive: true })
             {
                 var outer = _steps.Where(step => step.Order < PipelineOrder.Retry);
                 return await Run(context, outer, token => AttemptsAsync(context, handler, invoke, token), cancellationToken);
@@ -99,7 +100,7 @@ internal sealed partial class Dispatcher : IDispatcher
     {
         for (var attempt = 1; ; attempt++)
         {
-            await using var attemptScope = _scopeFactory.CreateAsyncScope();
+            var attemptScope = _scopeFactory.CreateAsyncScope();
             try
             {
                 var inner = attemptScope.ServiceProvider.GetServices<IPipelineStep>()
@@ -111,14 +112,30 @@ internal sealed partial class Dispatcher : IDispatcher
             {
                 LogRetrying(_logger, context.MessageType.Name, attempt, _options.ConcurrencyAttempts);
             }
+            finally
+            {
+                await DisposeQuietlyAsync(attemptScope, context.MessageType.Name);
+            }
+        }
+    }
+
+    private async Task DisposeQuietlyAsync(AsyncServiceScope attemptScope, string message)
+    {
+        try
+        {
+            await attemptScope.DisposeAsync();
+        }
+        catch (Exception exception)
+        {
+            LogScopeDisposeFailed(_logger, exception, message);
         }
     }
 
     private SendFrame Enter()
     {
         var ambient = Ambient.Value;
-        var expected = ambient is not null && ReferenceEquals(ambient.Owner, this) ? ambient : null;
-        var frame = new SendFrame(this, expected, ambient);
+        var expected = NearestLive(ambient, this);
+        var frame = new SendFrame(this, expected, ambient, IsLive(ambient));
         if (!ReferenceEquals(Interlocked.CompareExchange(ref _current, frame, expected), expected))
         {
             throw new InvalidOperationException(
@@ -131,8 +148,48 @@ internal sealed partial class Dispatcher : IDispatcher
 
     private void Exit(SendFrame frame)
     {
-        Interlocked.CompareExchange(ref _current, frame.Parent, frame);
+        frame.Exited = true;
+        while (ReferenceEquals(Volatile.Read(ref _current), frame))
+        {
+            var target = frame.Parent;
+            while (target is { Exited: true })
+            {
+                target = target.Parent;
+            }
+
+            if (ReferenceEquals(Interlocked.CompareExchange(ref _current, target, frame), frame))
+            {
+                break;
+            }
+        }
+
         Ambient.Value = frame.Previous;
+    }
+
+    private static SendFrame? NearestLive(SendFrame? ambient, Dispatcher owner)
+    {
+        for (var frame = ambient; frame is not null; frame = frame.Previous)
+        {
+            if (!frame.Exited && ReferenceEquals(frame.Owner, owner))
+            {
+                return frame;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsLive(SendFrame? ambient)
+    {
+        for (var frame = ambient; frame is not null; frame = frame.Previous)
+        {
+            if (!frame.Exited)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static Task<object?> Run(MessageContext context, IEnumerable<IPipelineStep> steps, Func<CancellationToken, Task<object?>> handle, CancellationToken cancellationToken) =>
@@ -150,12 +207,25 @@ internal sealed partial class Dispatcher : IDispatcher
     [LoggerMessage(Level = LogLevel.Information, Message = "Command {Message} lost a concurrency race on attempt {Attempt} of {Attempts}; trying again")]
     private static partial void LogRetrying(ILogger logger, string message, int attempt, int attempts);
 
-    private sealed class SendFrame(Dispatcher owner, SendFrame? parent, SendFrame? previous)
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Disposing the attempt scope of command {Message} failed; the attempt's outcome is unchanged")]
+    private static partial void LogScopeDisposeFailed(ILogger logger, Exception exception, string message);
+
+    private sealed class SendFrame(Dispatcher owner, SendFrame? parent, SendFrame? previous, bool hasLiveAmbient)
     {
+        private volatile bool _exited;
+
         public Dispatcher Owner { get; } = owner;
 
         public SendFrame? Parent { get; } = parent;
 
         public SendFrame? Previous { get; } = previous;
+
+        public bool IsTopLevel { get; } = !hasLiveAmbient;
+
+        public bool Exited
+        {
+            get => _exited;
+            set => _exited = value;
+        }
     }
 }

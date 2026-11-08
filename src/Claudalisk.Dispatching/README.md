@@ -24,7 +24,9 @@ A command that loses a concurrency race is sent again. The retry applies only wh
 - no other send is running (it is not a nested send)
 - no unit of work is active in the caller's scope (`IUnitOfWork.IsActive` is false)
 
-Outer steps run once. Then each attempt, the first included, gets a fresh scope from `IServiceScopeFactory`, runs the inner steps and resolves the handler there. The attempt scope is disposed afterwards. Sends made by the handler go through the attempt scope's dispatcher as nested sends and are not retried on their own.
+Outer steps run once. Then each attempt, the first included, gets a fresh scope from `IServiceScopeFactory`, runs the inner steps and resolves the handler there. The attempt scope is disposed afterwards; a failure while disposing it is logged at Warning and does not change the attempt's outcome.
+
+Because every attempt runs in a fresh scope, scoped state the caller prepared is not visible to the handler: values that middleware put into a scoped holder (the current user or tenant) or anything set on a scoped service before sending. Resolve such state from a singleton or an accessor such as `IHttpContextAccessor`, or pass it in the message. Sends made by the handler go through the attempt scope's dispatcher as nested sends and are not retried on their own.
 
 An attempt is repeated only when it throws `ConcurrencyConflictException` itself (not wrapped) and the token is not canceled. There is no delay. `DispatchingOptions.ConcurrencyAttempts` (default 3, at least 1) is the total number of attempts; after the last one the exception propagates. Each retry is logged at Information.
 
@@ -52,7 +54,8 @@ Validation is by exact type: only the `IValidator<T>` registered for the message
 - a keyed `IHandler<,>` registration; the dispatcher resolves handlers without a key
 - a public class, struct or nested type of a module contract assembly named `...Command` or `...Query` without a handler
 - an assembly whose types cannot be loaded, with the first loader messages
-- a pipeline step with `Order` equal to `PipelineOrder.Retry`
+
+A pipeline step with `Order` equal to `PipelineOrder.Retry` is rejected when the hosted startup check or `ValidateDispatching` runs, and again when a scope's dispatcher is created. The registry itself never constructs steps.
 
 The registry reads the service collection once, when the provider first builds it, and keeps no reference to the collection afterwards. A handler or validator in a module assembly that was added to the catalog after `AddDispatching` is found at that moment and created per send with `ActivatorUtilities`, so it is not disposed with the scope.
 

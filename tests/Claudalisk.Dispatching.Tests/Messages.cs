@@ -58,3 +58,7 @@ public interface INamedMessage
 public sealed record DerivedCommand(string Name) : BaseCommand(Name), INamedMessage;
 
 public sealed record InvoiceIssuedEvent(string Number);
+
+public sealed record AbandonQuery;
+
+public sealed record BackgroundQuery;

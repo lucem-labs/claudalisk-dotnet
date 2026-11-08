@@ -52,6 +52,8 @@ public static class DispatchingServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(provider);
         provider.GetRequiredService<DispatchRegistry>();
+        using var scope = provider.CreateScope();
+        PipelineSteps.RejectRetrySlot(scope.ServiceProvider.GetServices<IPipelineStep>());
         return provider;
     }
 

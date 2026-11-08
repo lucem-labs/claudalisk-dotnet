@@ -73,18 +73,34 @@ public sealed class StartupCheckTests
     }
 
     [Fact]
+    public async Task TheHostStartupCheckRejectsAStepWithTheRetryOrder()
+    {
+        var services = new ServiceCollection().AddTestApp(UnusedDatabase);
+        services.AddScoped<IPipelineStep, RetrySlotStep>();
+        await using var provider = services.BuildServiceProvider();
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        {
+            foreach (var hosted in provider.GetServices<Microsoft.Extensions.Hosting.IHostedService>())
+            {
+                await hosted.StartAsync(TestContext.Current.CancellationToken);
+            }
+        });
+
+        Assert.Contains("belongs to the dispatcher", error.Message);
+    }
+
+    [Fact]
     public void AllProblemsAreReportedTogether()
     {
         var services = new ServiceCollection().AddTestApp(UnusedDatabase);
         services.Remove(services.Single(descriptor => descriptor.ServiceType == typeof(IHandler<ChargeOrderCommand, Guid>)));
         services.AddScoped<IHandler<ShipmentSent, int>, ShipmentSentHandler<int>>();
-        services.AddScoped<IPipelineStep, RetrySlotStep>();
 
         var error = Assert.Throws<InvalidOperationException>(() => services.BuildServiceProvider().ValidateDispatching());
 
         Assert.Contains("has no handler", error.Message);
         Assert.Contains("neither Command nor Query", error.Message);
-        Assert.Contains("belongs to the dispatcher", error.Message);
     }
 
     private sealed record ShipmentSent;

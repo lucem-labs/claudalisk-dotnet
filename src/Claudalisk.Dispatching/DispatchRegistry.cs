@@ -10,7 +10,7 @@ internal sealed class DispatchRegistry
     private readonly Dictionary<Type, HandlerRegistration> _handlers;
     private readonly Dictionary<Type, Type[]> _unregisteredValidators;
 
-    public DispatchRegistry(IReadOnlyList<ServiceDescriptor> descriptors, IServiceProvider provider)
+    public DispatchRegistry(IReadOnlyList<ServiceDescriptor> descriptors)
     {
         var problems = new List<string>();
         var registrations = descriptors.Select(HandlerRegistration.From).OfType<HandlerRegistration>().ToList();
@@ -64,7 +64,6 @@ internal sealed class DispatchRegistry
         var contractMessages = ContractMessages(contractAssemblies, problems);
 
         problems.AddRange(Problems(registrations, contractMessages));
-        problems.AddRange(StepProblems(descriptors, provider));
         if (problems.Count > 0)
         {
             throw new InvalidOperationException("The dispatcher's handlers are not valid:" + Environment.NewLine + string.Join(Environment.NewLine, problems));
@@ -110,35 +109,6 @@ internal sealed class DispatchRegistry
         && !type.IsInterface
         && !type.ContainsGenericParameters
         && !typeof(Delegate).IsAssignableFrom(type);
-
-    private static IEnumerable<string> StepProblems(IReadOnlyList<ServiceDescriptor> descriptors, IServiceProvider provider)
-    {
-        using var scope = provider.CreateScope();
-        foreach (var descriptor in descriptors.Where(descriptor => descriptor.ServiceType == typeof(IPipelineStep) && !descriptor.IsKeyedService))
-        {
-            var order = OrderOf(descriptor, scope.ServiceProvider);
-            if (order == PipelineOrder.Retry)
-            {
-                var type = descriptor.ImplementationType ?? descriptor.ImplementationInstance?.GetType();
-                yield return $"- '{type?.FullName ?? "A pipeline step"}' has Order {PipelineOrder.Retry}, which belongs to the dispatcher's retry; give the step another Order.";
-            }
-        }
-    }
-
-    private static int? OrderOf(ServiceDescriptor descriptor, IServiceProvider scope)
-    {
-        try
-        {
-            var step = descriptor.ImplementationInstance
-                ?? descriptor.ImplementationFactory?.Invoke(scope)
-                ?? (descriptor.ImplementationType is null ? null : ActivatorUtilities.CreateInstance(scope, descriptor.ImplementationType));
-            return (step as IPipelineStep)?.Order;
-        }
-        catch (InvalidOperationException)
-        {
-            return null;
-        }
-    }
 
     internal static IEnumerable<string> Problems(IReadOnlyCollection<HandlerRegistration> registrations, IEnumerable<Type> contractMessages)
     {

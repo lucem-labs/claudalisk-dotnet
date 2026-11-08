@@ -183,6 +183,8 @@ internal static class TestApp
         services.AddScoped<IPipelineStep, RecordingStep>();
         services.AddSingleton<AttemptLog>();
         services.AddSingleton<Gate>();
+        services.AddSingleton<Background>();
+        services.AddScoped<ThrowingDisposable>();
         services.AddSingleton<StepTrace>();
         return services;
     }
@@ -191,6 +193,8 @@ internal static class TestApp
 public sealed class AttemptLog
 {
     public List<Guid> ScopeIds { get; } = [];
+
+    public bool ThrowOnDispose { get; set; }
 }
 
 public sealed class Gate
@@ -198,6 +202,12 @@ public sealed class Gate
     public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    private int _entries;
+
+    public int Entries => _entries;
+
+    public void Enter() => Interlocked.Increment(ref _entries);
 }
 
 public sealed class StepTrace
@@ -205,11 +215,12 @@ public sealed class StepTrace
     public List<(string Step, bool UnitOfWorkActive)> Entries { get; } = [];
 }
 
-internal sealed class FlakyHandler(OrdersDbContext db, AttemptLog log, ScopeMarker marker) : IHandler<FlakyCommand, Guid>
+internal sealed class FlakyHandler(OrdersDbContext db, AttemptLog log, ScopeMarker marker, ThrowingDisposable disposable) : IHandler<FlakyCommand, Guid>
 {
     public async Task<Guid> HandleAsync(FlakyCommand message, CancellationToken cancellationToken)
     {
         log.ScopeIds.Add(marker.Id);
+        GC.KeepAlive(disposable);
         db.Orders.Add(new Order { Id = Guid.NewGuid(), Reference = "flaky" });
         await db.SaveChangesAsync(cancellationToken);
         if (log.ScopeIds.Count <= message.FailAttempts)
@@ -240,6 +251,7 @@ internal sealed class GateHandler(Gate gate) : IHandler<GateQuery, int>
 {
     public async Task<int> HandleAsync(GateQuery message, CancellationToken cancellationToken)
     {
+        gate.Enter();
         gate.Entered.TrySetResult();
         await gate.Release.Task.WaitAsync(cancellationToken);
         return 1;
@@ -251,7 +263,7 @@ internal sealed class FanOutHandler(IDispatcher dispatcher, Gate gate) : IHandle
     public async Task<int> HandleAsync(FanOutQuery message, CancellationToken cancellationToken)
     {
         var first = dispatcher.SendAsync<int>(new GateQuery(), cancellationToken);
-        await gate.Entered.Task.WaitAsync(cancellationToken);
+        await gate.Entered.Task.WaitAsync(TimeSpan.FromSeconds(30), cancellationToken);
         var second = dispatcher.SendAsync<int>(new CountOrdersQuery(), cancellationToken);
         gate.Release.TrySetResult();
         return (await Task.WhenAll(first, second)).Sum();
@@ -319,4 +331,41 @@ internal sealed class RetrySlotStep : IPipelineStep
     public int Order => PipelineOrder.Retry;
 
     public Task<object?> InvokeAsync(MessageContext context, Func<CancellationToken, Task<object?>> next, CancellationToken cancellationToken) => next(cancellationToken);
+}
+
+public sealed class Background
+{
+    public Task<int>? Task { get; set; }
+
+    public TaskCompletionSource Resume { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+}
+
+public sealed class ThrowingDisposable(AttemptLog log) : IAsyncDisposable
+{
+    public ValueTask DisposeAsync() => log.ThrowOnDispose ? throw new InvalidOperationException("The scoped service could not be disposed.") : ValueTask.CompletedTask;
+}
+
+internal sealed class AbandonHandler(IDispatcher dispatcher, Gate gate, Background background) : IHandler<AbandonQuery, int>
+{
+    public async Task<int> HandleAsync(AbandonQuery message, CancellationToken cancellationToken)
+    {
+        background.Task = dispatcher.SendAsync<int>(new GateQuery(), cancellationToken);
+        await gate.Entered.Task.WaitAsync(TimeSpan.FromSeconds(30), cancellationToken);
+        throw new InvalidOperationException("The handler gave up before its nested send finished.");
+    }
+}
+
+internal sealed class BackgroundHandler(IDispatcher dispatcher, Background background) : IHandler<BackgroundQuery, int>
+{
+    public Task<int> HandleAsync(BackgroundQuery message, CancellationToken cancellationToken)
+    {
+        background.Task = Task.Run(
+            async () =>
+            {
+                await background.Resume.Task.WaitAsync(TimeSpan.FromSeconds(30));
+                return await dispatcher.SendAsync<int>(new CountOrdersQuery());
+            },
+            CancellationToken.None);
+        return Task.FromResult(0);
+    }
 }
