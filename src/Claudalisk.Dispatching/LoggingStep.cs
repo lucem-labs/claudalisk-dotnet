@@ -31,7 +31,7 @@ internal sealed partial class LoggingStep(IServiceProvider scope) : IPipelineSte
         }
         catch (Exception exception)
         {
-            LogFailed(_logger, exception, context.Kind, context.MessageType.Name, exception.Message);
+            LogFailed(_logger, exception, context.Kind, context.MessageType.Name);
             throw;
         }
     }
@@ -48,6 +48,6 @@ internal sealed partial class LoggingStep(IServiceProvider scope) : IPipelineSte
     [LoggerMessage(Level = LogLevel.Information, Message = "{Kind} {Message} was rejected: {Error}")]
     private static partial void LogInvalid(ILogger logger, MessageKind kind, string message, string error);
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "{Kind} {Message} failed: {Error}")]
-    private static partial void LogFailed(ILogger logger, Exception exception, MessageKind kind, string message, string error);
+    [LoggerMessage(Level = LogLevel.Warning, Message = "{Kind} {Message} failed")]
+    private static partial void LogFailed(ILogger logger, Exception exception, MessageKind kind, string message);
 }

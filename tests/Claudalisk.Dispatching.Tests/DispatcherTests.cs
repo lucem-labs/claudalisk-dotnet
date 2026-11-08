@@ -159,7 +159,7 @@ public sealed class DispatcherTests
                 (LogLevel.Debug, "Handling Query WhichScopeQuery", false),
                 (LogLevel.Debug, "Handled Query WhichScopeQuery", false),
                 (LogLevel.Debug, "Handling Query PeekOrdersQuery", false),
-                (LogLevel.Information, "Query PeekOrdersQuery failed: The query failed after it wrote.", true),
+                (LogLevel.Warning, "Query PeekOrdersQuery failed", true),
             ],
             log.Entries.Where(entry => entry.Category == typeof(IDispatcher).FullName).Select(entry => (entry.Level, entry.Message, entry.HasException)));
     }
