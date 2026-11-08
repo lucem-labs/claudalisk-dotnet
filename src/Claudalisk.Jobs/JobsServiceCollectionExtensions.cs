@@ -37,6 +37,7 @@ public static class JobsServiceCollectionExtensions
         }
 
         Registry(services);
+        services.TryAddSingleton(TimeProvider.System);
         services.AddOptions<JobsOptions>().Validate(
             options => options.CancelCheckInterval > TimeSpan.Zero && options.PruneInterval > TimeSpan.Zero && options.FinishedJobRetention > TimeSpan.Zero
                 && options.RetryAfterMaxDelay > TimeSpan.Zero,
@@ -56,7 +57,7 @@ public static class JobsServiceCollectionExtensions
             provider.GetRequiredService<JobsRegistry>(),
             provider.GetRequiredService<IOptions<JobsOptions>>(),
             provider.GetRequiredService<ILogger<JobRunner>>(),
-            provider.GetService<TimeProvider>() ?? TimeProvider.System,
+            provider.GetRequiredService<TimeProvider>(),
             provider.GetService<ModuleCatalog>()));
         services.AddHostedService<JobsModulesCheck>();
         services.AddHostedService<JobWorkers>();

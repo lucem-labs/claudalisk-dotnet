@@ -4,7 +4,7 @@ using Microsoft.Extensions.Options;
 
 namespace Claudalisk.Jobs;
 
-internal sealed partial class JobWorkers(JobRunner runner, IJobTransport transport, JobsRegistry registry, IOptions<JobsOptions> options, ILogger<JobWorkers> logger)
+internal sealed partial class JobWorkers(JobRunner runner, IJobTransport transport, JobsRegistry registry, IOptions<JobsOptions> options, TimeProvider time, ILogger<JobWorkers> logger)
     : BackgroundService
 {
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
@@ -23,7 +23,7 @@ internal sealed partial class JobWorkers(JobRunner runner, IJobTransport transpo
 
     private async Task PruneAsync(JobsModule module, CancellationToken stoppingToken)
     {
-        using var timer = new PeriodicTimer(options.Value.PruneInterval);
+        using var timer = new PeriodicTimer(options.Value.PruneInterval, time);
         try
         {
             while (await timer.WaitForNextTickAsync(stoppingToken))
@@ -64,7 +64,7 @@ internal sealed partial class JobWorkers(JobRunner runner, IJobTransport transpo
                 LogWorkerFailed(logger, exception, module.Name, lane);
                 try
                 {
-                    await Task.Delay(options.Value.PollInterval, stoppingToken);
+                    await Task.Delay(options.Value.PollInterval, time, stoppingToken);
                 }
                 catch (OperationCanceledException)
                 {
