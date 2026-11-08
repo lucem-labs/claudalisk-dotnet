@@ -14,15 +14,19 @@ internal sealed class PostgreSqlJobWriter(IScopeConnection scope) : IJobWriter
         var id = Guid.CreateVersion7();
         if (job.Options.DedupeKey is not null)
         {
+            await using var gate = await CommandAsync("SELECT pg_advisory_xact_lock(hashtextextended(@lockKey, 0))", cancellationToken);
+            gate.Parameters.AddWithValue("lockKey", JobsTable.DedupeLockKey(module, job.Kind, job.Options.DedupeKey));
+            await gate.ExecuteNonQueryAsync(cancellationToken);
             await using var supersede = await CommandAsync(
                 $"""
                 UPDATE {table}
                 SET status = 'canceled', finished_at = now(),
                     last_error = @superseded::jsonb
-                WHERE dedupe_key = @key AND status = 'queued'
+                WHERE kind = @kind AND dedupe_key = @key AND status = 'queued'
                 """, cancellationToken);
+            supersede.Parameters.AddWithValue("kind", job.Kind);
             supersede.Parameters.AddWithValue("key", job.Options.DedupeKey);
-            supersede.Parameters.AddWithValue("superseded", JsonSerializer.Serialize(new JobError("/problems/jobs/superseded", "A newer job with the same key replaced this one.", null), JobQueue.Json));
+            supersede.Parameters.AddWithValue("superseded", JobsTable.SupersededJson);
             await supersede.ExecuteNonQueryAsync(cancellationToken);
         }
 

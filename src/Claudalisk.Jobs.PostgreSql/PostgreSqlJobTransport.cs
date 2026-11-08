@@ -16,14 +16,32 @@ internal sealed class PostgreSqlJobTransport(NpgsqlDataSource dataSource) : IJob
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await using (var requeue = new NpgsqlCommand(
             $"""
-            UPDATE {table}
-            SET status = CASE WHEN attempts >= max_attempts THEN 'failed' ELSE 'queued' END,
+            WITH candidates AS (
+                SELECT id, kind, dedupe_key,
+                    row_number() OVER (PARTITION BY kind, dedupe_key ORDER BY created_at DESC, id DESC) AS rank
+                FROM {table}
+                WHERE status = 'running' AND heartbeat_at < now() - @stale AND attempts < max_attempts AND dedupe_key IS NOT NULL
+            ),
+            superseded AS (
+                SELECT candidate.id FROM candidates AS candidate
+                WHERE candidate.rank > 1
+                    OR EXISTS (SELECT 1 FROM {table} AS twin WHERE twin.kind = candidate.kind AND twin.dedupe_key = candidate.dedupe_key AND twin.status = 'queued')
+            )
+            UPDATE {table} AS job
+            SET status = CASE
+                    WHEN job.attempts >= job.max_attempts THEN 'failed'
+                    WHEN job.id IN (SELECT id FROM superseded) THEN 'canceled'
+                    ELSE 'queued' END,
                 heartbeat_at = NULL,
-                finished_at = CASE WHEN attempts >= max_attempts THEN now() ELSE NULL END,
-                last_error = CASE WHEN attempts >= max_attempts THEN @staleError::jsonb ELSE last_error END
-            WHERE status = 'running' AND heartbeat_at < now() - @stale
+                finished_at = CASE WHEN job.attempts >= job.max_attempts OR job.id IN (SELECT id FROM superseded) THEN now() ELSE NULL END,
+                last_error = CASE
+                    WHEN job.attempts >= job.max_attempts THEN @staleError::jsonb
+                    WHEN job.id IN (SELECT id FROM superseded) THEN @superseded::jsonb
+                    ELSE job.last_error END
+            WHERE job.status = 'running' AND job.heartbeat_at < now() - @stale
             """, connection, transaction))
         {
+            requeue.Parameters.AddWithValue("superseded", JobsTable.SupersededJson);
             requeue.Parameters.AddWithValue("stale", staleAfter);
             requeue.Parameters.AddWithValue("staleError", JsonSerializer.Serialize(new JobError("/problems/jobs/stale", "The job stopped sending heartbeats.", null), JobQueue.Json));
             await requeue.ExecuteNonQueryAsync(cancellationToken);
@@ -118,15 +136,16 @@ internal sealed class PostgreSqlJobTransport(NpgsqlDataSource dataSource) : IJob
     {
         await using var command = dataSource.CreateCommand(
             $"""
-            UPDATE {JobsTable.Quote(module.Schema)}.jobs
-            SET last_error = @error::jsonb,
+            UPDATE {Table(module)} AS job
+            SET last_error = CASE WHEN @retry AND {HasQueuedTwin(module)} THEN @superseded::jsonb ELSE @error::jsonb END,
                 heartbeat_at = NULL,
-                status = CASE WHEN @retry THEN 'queued' ELSE 'failed' END,
+                status = CASE WHEN @retry AND {HasQueuedTwin(module)} THEN 'canceled' WHEN @retry THEN 'queued' ELSE 'failed' END,
                 not_before = CASE WHEN @retry THEN now() + @delay ELSE not_before END,
-                finished_at = CASE WHEN @retry THEN NULL ELSE now() END
+                finished_at = CASE WHEN @retry AND NOT {HasQueuedTwin(module)} THEN NULL ELSE now() END
             WHERE id = @id AND status = 'running'
             """);
         command.Parameters.AddWithValue("id", id);
+        command.Parameters.AddWithValue("superseded", JobsTable.SupersededJson);
         command.Parameters.AddWithValue("error", JsonSerializer.Serialize(error, JobQueue.Json));
         command.Parameters.AddWithValue("retry", retryAfter is not null);
         command.Parameters.AddWithValue("delay", retryAfter ?? TimeSpan.Zero);
@@ -145,8 +164,17 @@ internal sealed class PostgreSqlJobTransport(NpgsqlDataSource dataSource) : IJob
     public async Task RequeueAsync(JobsModule module, Guid id, CancellationToken cancellationToken)
     {
         await using var command = dataSource.CreateCommand(
-            $"UPDATE {JobsTable.Quote(module.Schema)}.jobs SET status = 'queued', heartbeat_at = NULL, attempts = greatest(attempts - 1, 0) WHERE id = @id AND status = 'running'");
+            $"""
+            UPDATE {Table(module)} AS job
+            SET status = CASE WHEN {HasQueuedTwin(module)} THEN 'canceled' ELSE 'queued' END,
+                finished_at = CASE WHEN {HasQueuedTwin(module)} THEN now() ELSE NULL END,
+                last_error = CASE WHEN {HasQueuedTwin(module)} THEN @superseded::jsonb ELSE last_error END,
+                heartbeat_at = NULL,
+                attempts = greatest(attempts - 1, 0)
+            WHERE id = @id AND status = 'running'
+            """);
         command.Parameters.AddWithValue("id", id);
+        command.Parameters.AddWithValue("superseded", JobsTable.SupersededJson);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -203,6 +231,11 @@ internal sealed class PostgreSqlJobTransport(NpgsqlDataSource dataSource) : IJob
         command.Parameters.AddWithValue("retention", retention);
         return await command.ExecuteNonQueryAsync(cancellationToken);
     }
+
+    private static string Table(JobsModule module) => $"{JobsTable.Quote(module.Schema)}.jobs";
+
+    private static string HasQueuedTwin(JobsModule module) =>
+        $"(job.dedupe_key IS NOT NULL AND EXISTS (SELECT 1 FROM {Table(module)} AS twin WHERE twin.kind = job.kind AND twin.dedupe_key = job.dedupe_key AND twin.status = 'queued'))";
 
     internal async Task NotifyAsync(JobsModule module, CancellationToken cancellationToken)
     {
