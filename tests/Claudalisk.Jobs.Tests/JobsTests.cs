@@ -164,6 +164,23 @@ public sealed class JobsTests
     }
 
     [Fact]
+    public async Task ADomainErrorThrownSynchronouslyByAnEventHandlerFailsTheDeliveryAtOnceWithItsProblemType()
+    {
+        await using var app = await PostgresServer.CreateAppAsync();
+        await using (var scope = app.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().RunAsync(
+                token => scope.ServiceProvider.GetRequiredService<IEventPublisher>().PublishAsync(new OrderShipped(Guid.NewGuid()), token),
+                TestContext.Current.CancellationToken);
+        }
+
+        Assert.Equal(1, await Runner(app).RunUntilIdleAsync("Mail", cancellationToken: TestContext.Current.CancellationToken));
+
+        Assert.Equal(1, await CountAsync(
+            app, "mail.jobs WHERE kind = 'refuse-on-order-shipped' AND status = 'failed' AND attempts = 1 AND last_error->>'type' = '/problems/orders/order-refused'"));
+    }
+
+    [Fact]
     public async Task ADomainErrorsExtensionsAreStoredWithTheJobsErrorAndShownByTheRouter()
     {
         await using var app = await PostgresServer.CreateAppAsync();

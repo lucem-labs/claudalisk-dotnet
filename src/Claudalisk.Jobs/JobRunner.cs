@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -16,6 +17,9 @@ public sealed partial class JobRunner
     private static readonly MethodInfo BatchMethod = typeof(JobRunner).GetMethod(nameof(RunBatchesAsync), BindingFlags.NonPublic | BindingFlags.Static)!;
     private static readonly MethodInfo RebuildMethod = typeof(JobRunner).GetMethod(nameof(RebuildAsync), BindingFlags.NonPublic | BindingFlags.Static)!;
     private static readonly MethodInfo EventMethod = typeof(JobRunner).GetMethod(nameof(HandleEventAsync), BindingFlags.NonPublic | BindingFlags.Static)!;
+    private static readonly ConcurrentDictionary<(Type Payload, Type Checkpoint), Func<IServiceProvider, JobKind, JobContext, object, string?, CancellationToken, Task>> Batches = new();
+    private static readonly ConcurrentDictionary<(Type Payload, Type Event), Func<IServiceProvider, JobKind, JobContext, object, CancellationToken, Task>> Rebuilds = new();
+    private static readonly ConcurrentDictionary<Type, Func<object, object, CancellationToken, Task>> Events = new();
 
     private readonly IServiceScopeFactory _scopes;
     private readonly IJobTransport _transport;
@@ -96,20 +100,25 @@ public sealed partial class JobRunner
 
                     break;
                 case JobKindType.Batch:
-                    await (Task)BatchMethod.MakeGenericMethod(kind.PayloadType, kind.CheckpointType!)
-                        .Invoke(null, [scope.ServiceProvider, kind, context, payload, claimed.Checkpoint, cancel.Token])!;
+                    var batch = Batches.GetOrAdd((kind.PayloadType, kind.CheckpointType!), key =>
+                        BatchMethod.MakeGenericMethod(key.Payload, key.Checkpoint)
+                            .CreateDelegate<Func<IServiceProvider, JobKind, JobContext, object, string?, CancellationToken, Task>>());
+                    await batch(scope.ServiceProvider, kind, context, payload, claimed.Checkpoint, cancel.Token);
                     break;
                 case JobKindType.Rebuild:
-                    await (Task)RebuildMethod.MakeGenericMethod(kind.PayloadType, module.Kinds[kind.EventKind!].PayloadType)
-                        .Invoke(null, [scope.ServiceProvider, kind, context, payload, cancel.Token])!;
+                    var rebuild = Rebuilds.GetOrAdd((kind.PayloadType, module.Kinds[kind.EventKind!].PayloadType), key =>
+                        RebuildMethod.MakeGenericMethod(key.Payload, key.Event)
+                            .CreateDelegate<Func<IServiceProvider, JobKind, JobContext, object, CancellationToken, Task>>());
+                    await rebuild(scope.ServiceProvider, kind, context, payload, cancel.Token);
                     break;
                 default:
+                    var handle = Events.GetOrAdd(kind.PayloadType, key =>
+                        EventMethod.MakeGenericMethod(key).CreateDelegate<Func<object, object, CancellationToken, Task>>());
                     await scope.ServiceProvider.GetRequiredService<IOuterPipeline>().RunAsync(payload, MessageKind.Event, async outerToken =>
                     {
                         await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().RunAsync(async token =>
                         {
-                            await (Task)EventMethod.MakeGenericMethod(kind.PayloadType)
-                                .Invoke(null, [scope.ServiceProvider.GetRequiredService(kind.HandlerType!), payload, token])!;
+                            await handle(scope.ServiceProvider.GetRequiredService(kind.HandlerType!), payload, token);
                             await scope.ServiceProvider.GetRequiredService<EventPublisher>().PublishTrackedAsync(token);
                             await context.CompleteAsync(scope.ServiceProvider.GetRequiredService<IJobWriter>(), token);
                         }, outerToken);

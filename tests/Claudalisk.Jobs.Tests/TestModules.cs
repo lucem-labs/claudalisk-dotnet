@@ -46,6 +46,8 @@ public sealed record CancelOrderCommand(Guid OrderId, bool FailAfterCancel);
 
 public sealed record OrderCanceled(Guid OrderId);
 
+public sealed record OrderShipped(Guid OrderId);
+
 internal sealed record ImportOrdersCommand(int Total, int CrashWhenDone);
 
 internal sealed record ImportCheckpoint(int Done);
@@ -388,6 +390,11 @@ internal sealed class MailOnOrderCanceledHandler : IEventHandler<OrderCanceled>
         throw new InvalidOperationException("The mail server is down.");
 }
 
+internal sealed class RefuseOnOrderShippedHandler : IEventHandler<OrderShipped>
+{
+    public Task HandleAsync(OrderShipped integrationEvent, CancellationToken cancellationToken) => throw new OrderRefused();
+}
+
 public sealed class OrdersModule : IModule
 {
     public Type Contract => typeof(OrdersContract);
@@ -437,7 +444,9 @@ public sealed class MailModule : IModule
     public void ConfigureServices(IServiceCollection services, IConfiguration configuration)
     {
         services.AddModuleDbContext<MailDbContext>("mail");
-        services.AddModuleJobs("Mail", "mail", jobs => jobs.Subscribe<OrderCanceled, MailOnOrderCanceledHandler>("mail-on-order-canceled"));
+        services.AddModuleJobs("Mail", "mail", jobs => jobs
+            .Subscribe<OrderCanceled, MailOnOrderCanceledHandler>("mail-on-order-canceled")
+            .Subscribe<OrderShipped, RefuseOnOrderShippedHandler>("refuse-on-order-shipped"));
     }
 }
 
