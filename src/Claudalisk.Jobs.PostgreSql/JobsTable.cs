@@ -45,6 +45,11 @@ public static partial class JobsTable
 
     public static string DropPruneIndexSql(string schema) => $"DROP INDEX {Quote(schema)}.ix_jobs_finished;";
 
+    public static string CreateRunningIndexSql(string schema) =>
+        $"CREATE INDEX ix_jobs_running ON {Quote(schema)}.jobs (heartbeat_at) WHERE status = 'running';";
+
+    public static string DropRunningIndexSql(string schema) => $"DROP INDEX {Quote(schema)}.ix_jobs_running;";
+
     public static string CreateDedupeIndexSql(string schema)
     {
         var s = Quote(schema);

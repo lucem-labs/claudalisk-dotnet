@@ -61,4 +61,5 @@ Every name given to `AddModuleJobs` must be the name of a module in the `ModuleC
 `JobsTable.CreateSql(schema)` is what an app calls from its initial migration and it never changes. Later changes are separate helpers that an app calls from a new migration, each with a drop counterpart:
 
 - `CreatePruneIndexSql` / `DropPruneIndexSql`: index on finished rows
+- `CreateRunningIndexSql` / `DropRunningIndexSql`: index on the heartbeat of running rows, which every claim searches for stale jobs. Call it in every module schema; without it each claim scans the table
 - `CreateDedupeIndexSql` / `DropDedupeIndexSql`: cancels older queued duplicates of a kind and key (keeping the newest), then replaces `ix_jobs_dedupe` with the unique `ux_jobs_dedupe`. `DropDedupeIndexSql` restores the old index but does not restore the duplicates `CreateDedupeIndexSql` canceled. Call it in every module schema; without it the dedupe lock still works but the backstop is missing

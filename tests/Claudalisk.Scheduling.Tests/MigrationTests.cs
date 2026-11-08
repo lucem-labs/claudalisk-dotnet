@@ -21,6 +21,7 @@ public sealed class MigrationTests
         await initializer.MigrateAsync(TestContext.Current.CancellationToken);
         Assert.Equal(["last_fired_timestamp", "name"], await ColumnsAsync(dataSource, "schedules"));
         Assert.Contains("ux_jobs_dedupe", await IndexesAsync(dataSource), StringComparer.Ordinal);
+        Assert.Contains("ix_jobs_running", await IndexesAsync(dataSource), StringComparer.Ordinal);
 
         await db.Database.GetService<IMigrator>().MigrateAsync("0", TestContext.Current.CancellationToken);
         Assert.Empty(await ColumnsAsync(dataSource, "schedules"));

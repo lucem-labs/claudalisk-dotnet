@@ -13,6 +13,7 @@ internal sealed class AddSchedulingJobs : Migration
         migrationBuilder.Sql(JobsTable.CreateSql(SchedulingJobs.Schema));
         migrationBuilder.Sql(JobsTable.CreatePruneIndexSql(SchedulingJobs.Schema));
         migrationBuilder.Sql(JobsTable.CreateDedupeIndexSql(SchedulingJobs.Schema));
+        migrationBuilder.Sql(JobsTable.CreateRunningIndexSql(SchedulingJobs.Schema));
     }
 
     protected override void Down(MigrationBuilder migrationBuilder) => migrationBuilder.Sql(JobsTable.DropSql(SchedulingJobs.Schema));

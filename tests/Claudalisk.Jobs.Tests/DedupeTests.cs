@@ -136,6 +136,14 @@ public sealed class DedupeTests
         return (transport, orders, running, newer);
     }
 
+    [Fact]
+    public async Task TheRunningIndexExistsAfterTheMigrations()
+    {
+        await using var app = await PostgresServer.CreateAppAsync();
+
+        Assert.Equal(1L, await ScalarAsync(app, "SELECT count(*) FROM pg_indexes WHERE schemaname = 'orders' AND indexname = 'ix_jobs_running'"));
+    }
+
     private static async Task<(long Unique, long Plain)> DedupeIndexesAsync(IServiceProvider app) =>
         ((long)(await ScalarAsync(app, "SELECT count(*) FROM pg_indexes WHERE schemaname = 'billing' AND indexname = 'ux_jobs_dedupe'"))!,
         (long)(await ScalarAsync(app, "SELECT count(*) FROM pg_indexes WHERE schemaname = 'billing' AND indexname = 'ix_jobs_dedupe'"))!);
