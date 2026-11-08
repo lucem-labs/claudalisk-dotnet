@@ -20,7 +20,3 @@ The dispatcher runs every command in a unit of work, so a handler seldom calls `
 ## ConcurrencyConflictException
 
 Thrown when a write finds that someone else changed the data since it was read. The dispatcher sends the command again, up to `DispatchingOptions.ConcurrencyAttempts` times. Other code that catches it should read the data again before it retries. The web package answers 409.
-
-## Trimming and AOT
-
-This package uses no reflection and is trimmable and AOT-compatible.
