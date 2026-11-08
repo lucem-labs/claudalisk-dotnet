@@ -48,8 +48,17 @@ public static class SchedulingServiceCollectionExtensions
         return services;
     }
 
-    private static void AddSchedulingJobs(IServiceCollection services, Action<ModuleJobsBuilder> configure) =>
+    private static void AddSchedulingJobs(IServiceCollection services, Action<ModuleJobsBuilder> configure)
+    {
+        var registry = services.Select(descriptor => descriptor.ImplementationInstance).OfType<JobsRegistry>().SingleOrDefault();
+        if (registry?.Find(SchedulingJobs.Name) is { LibraryOwned: false })
+        {
+            throw new InvalidOperationException(
+                $"The jobs module name '{SchedulingJobs.Name}' is reserved for the scheduler, but AddModuleJobs already registered a jobs module with that name. Rename that jobs module.");
+        }
+
         services.AddModuleJobs(SchedulingJobs.Name, SchedulingJobs.Schema, jobs => configure(jobs.LibraryOwned()));
+    }
 
     private static SchedulableCommands Commands(IServiceCollection services)
     {

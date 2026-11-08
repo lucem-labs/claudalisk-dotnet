@@ -15,6 +15,11 @@ internal sealed record Schedule(string Name, CronExpression Cron, TimeZoneInfo T
 
     public DateTimeOffset? LatestDue(DateTimeOffset last, DateTimeOffset now)
     {
+        if (NextAfter(last) is not { } soonest || soonest > now)
+        {
+            return null;
+        }
+
         var window = TimeSpan.FromMinutes(1);
         while (true)
         {

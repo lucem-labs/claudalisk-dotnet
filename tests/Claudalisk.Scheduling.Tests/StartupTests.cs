@@ -1,4 +1,5 @@
 using Claudalisk.Dispatching;
+using Claudalisk.Jobs;
 using Claudalisk.Persistence;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -70,6 +71,17 @@ public sealed class StartupTests
 
         Assert.Contains("'typo' of module 'Ctalog'", failure.Message, StringComparison.Ordinal);
         Assert.Contains("'Catalog'", failure.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AJobsModuleWithTheSchedulersNameFailsAddScheduling()
+    {
+        var services = new ServiceCollection();
+        services.AddModuleJobs("Scheduling", "app_scheduling", _ => { });
+
+        var failure = Assert.Throws<InvalidOperationException>(() => services.AddScheduling(new ConfigurationBuilder().Build()));
+
+        Assert.Contains("'Scheduling' is reserved", failure.Message, StringComparison.Ordinal);
     }
 
     [Fact]

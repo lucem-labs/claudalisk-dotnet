@@ -53,12 +53,12 @@ The next occurrence is computed by Cronos in the schedule's time zone. When the 
 Each schedule has a row in `scheduling.schedules` with `last_fired_timestamp`. A tick locks the row (`FOR UPDATE`), so several instances can run and only one claims an occurrence.
 
 - A schedule seen for the first time records the current time and waits for its next occurrence. It never catches up on the past.
-- After downtime, all missed occurrences become one run, for the latest occurrence that is due. The latest occurrence is found without walking every missed one: the search window before `now` starts at one minute and doubles until it holds an occurrence, then walks forward to the last one at or before `now`.
+- After downtime, all missed occurrences become one run, for the latest occurrence that is due. The latest occurrence is found without walking every missed one: the search window before `now` starts at one minute and doubles until it holds an occurrence, then walks forward to the last one at or before `now`. An idle schedule costs one Cronos call per tick. The forward walk is bounded by the burst of occurrences in the first non-empty window; a schedule such as `* 9 * * *` can take about 60 calls. Windows start from instants that may fall in a DST gap or a repeated hour, which Cronos resolves.
 - Rows of schedules that are no longer configured are deleted on the first tick of each process. A schedule added again later starts fresh. Pruning only runs in an enabled scheduler, and instances with different schedule lists would delete each other's rows, so roll out one configuration.
 
 ## The outbox and delivery
 
-The scheduler has a jobs module named `Scheduling` with schema `scheduling`. It is library-owned: the module-name check of `AddModuleJobs` skips it, and `IJobQueue.EnqueueAsync` never resolves a command to it, so an app's own jobs of the same command type never land in the scheduler's table. Each schedulable command is a command job kind of that module, named after the schedulable command.
+The scheduler has a jobs module named `Scheduling` (reserved: `AddScheduling` fails when an app already registered a jobs module with that name) with schema `scheduling`. It is library-owned: the module-name check of `AddModuleJobs` skips it, and `IJobQueue.EnqueueAsync` never resolves a command to it, so an app's own jobs of the same command type never land in the scheduler's table. Each schedulable command is a command job kind of that module, named after the schedulable command.
 
 A fire is one unit of work: it updates the claim row and inserts the job through `IJobWriter.InsertAsync`, with the dedupe key `<schedule>:<fire time>`, the fire time in UTC in ISO 8601 `O` format. If the insert fails, the claim rolls back and the occurrence fires again on the next tick. One schedule failing does not stop the tick: the error is logged and the other schedules go on.
 

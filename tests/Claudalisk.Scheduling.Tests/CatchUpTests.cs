@@ -7,13 +7,13 @@ namespace Claudalisk.Scheduling.Tests;
 
 public sealed class CatchUpTests
 {
-    private static (Schedule Schedule, Func<int> Calls) Counting(string cron)
+    private static (Schedule Schedule, Func<int> Calls) Counting(string cron, string zone = "UTC")
     {
         var calls = 0;
         var schedule = new Schedule(
             "counted",
             CronExpression.Parse(cron, CronFormat.Standard),
-            TimeZoneInfo.Utc,
+            TimeZoneInfo.FindSystemTimeZoneById(zone),
             new SchedulableCommand("refresh-catalog", "Catalog", typeof(RefreshCatalogCommand)),
             new RefreshCatalogCommand("x"))
         {
@@ -57,6 +57,32 @@ public sealed class CatchUpTests
         var now = new DateTimeOffset(2026, 10, 26, 10, 30, 20, TimeSpan.Zero);
 
         Assert.Null(schedule.LatestDue(now.AddMinutes(-5), now));
+    }
+
+    [Fact]
+    public void AnIdleDailyScheduleCostsOneCronCall()
+    {
+        var (schedule, calls) = Counting("0 3 * * *");
+        var now = new DateTimeOffset(2026, 10, 26, 10, 30, 20, TimeSpan.Zero);
+
+        Assert.Null(schedule.LatestDue(now.AddHours(-1), now));
+        Assert.Equal(1, calls());
+    }
+
+    [Theory]
+    [InlineData(2027, 3, 26, 1, 30, 2027, 3, 28, 1, 20, 2027, 3, 28, 1, 0)]
+    [InlineData(2027, 3, 26, 1, 30, 2027, 3, 28, 1, 0, 2027, 3, 28, 1, 0)]
+    [InlineData(2027, 10, 29, 0, 30, 2027, 10, 31, 1, 45, 2027, 10, 31, 0, 30)]
+    [InlineData(2027, 10, 29, 0, 30, 2027, 10, 31, 0, 10, 2027, 10, 30, 0, 30)]
+    public void CatchUpAcrossADaylightSavingChangeFindsTheLatestOccurrence(
+        int ly, int lmo, int ld, int lh, int lmi, int ny, int nmo, int nd, int nh, int nmi, int ey, int emo, int ed, int eh, int emi)
+    {
+        var (schedule, calls) = Counting("30 2 * * *", "Europe/Warsaw");
+        var last = new DateTimeOffset(ly, lmo, ld, lh, lmi, 0, TimeSpan.Zero);
+        var now = new DateTimeOffset(ny, nmo, nd, nh, nmi, 0, TimeSpan.Zero);
+
+        Assert.Equal(new DateTimeOffset(ey, emo, ed, eh, emi, 0, TimeSpan.Zero), schedule.LatestDue(last, now));
+        Assert.InRange(calls(), 1, 20);
     }
 
     [Fact]
