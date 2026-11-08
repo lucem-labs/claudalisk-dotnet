@@ -240,6 +240,25 @@ public sealed class JobsTests
     }
 
     [Fact]
+    public async Task AClaimOnOneLaneSettlesTheStaleJobsOfEveryOtherLane()
+    {
+        await using var app = await PostgresServer.CreateAppAsync();
+        var requeued = await EnqueueAsync(app, new FlakyCommand(0), new JobOptions(Lane: "slow"));
+        var exhausted = await EnqueueAsync(app, new StrictCommand("A-1"), new JobOptions(Lane: "slow", MaxAttempts: 1));
+        var transport = app.GetRequiredService<IJobTransport>();
+        var orders = Registry(app).Find("Orders")!;
+        await transport.ClaimAsync(orders, "slow", TimeSpan.FromMinutes(2), TestContext.Current.CancellationToken);
+        await transport.ClaimAsync(orders, "slow", TimeSpan.FromMinutes(2), TestContext.Current.CancellationToken);
+        await ExecuteAsync(app, "UPDATE orders.jobs SET heartbeat_at = now() - interval '3 minutes', lane = CASE WHEN id = '" + exhausted.Id + "' THEN 'ghost' ELSE lane END");
+
+        Assert.Null(await transport.ClaimAsync(orders, JobOptions.DefaultLane, TimeSpan.FromMinutes(2), TestContext.Current.CancellationToken));
+
+        Assert.Equal(JobStatus.Queued, (await JobAsync(app, "Orders", requeued.Id))!.Status);
+        var failed = (await JobAsync(app, "Orders", exhausted.Id))!;
+        Assert.Equal((JobStatus.Failed, "/problems/jobs/stale"), (failed.Status, failed.LastError!.Type));
+    }
+
+    [Fact]
     public async Task CancelingAQueuedJobMeansItNeverRuns()
     {
         await using var app = await PostgresServer.CreateAppAsync();

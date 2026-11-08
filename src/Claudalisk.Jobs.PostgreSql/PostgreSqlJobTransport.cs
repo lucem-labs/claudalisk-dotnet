@@ -21,10 +21,9 @@ internal sealed class PostgreSqlJobTransport(NpgsqlDataSource dataSource) : IJob
                 heartbeat_at = NULL,
                 finished_at = CASE WHEN attempts >= max_attempts THEN now() ELSE NULL END,
                 last_error = CASE WHEN attempts >= max_attempts THEN @staleError::jsonb ELSE last_error END
-            WHERE lane = @lane AND status = 'running' AND heartbeat_at < now() - @stale
+            WHERE status = 'running' AND heartbeat_at < now() - @stale
             """, connection, transaction))
         {
-            requeue.Parameters.AddWithValue("lane", lane);
             requeue.Parameters.AddWithValue("stale", staleAfter);
             requeue.Parameters.AddWithValue("staleError", JsonSerializer.Serialize(new JobError("/problems/jobs/stale", "The job stopped sending heartbeats.", null), JobQueue.Json));
             await requeue.ExecuteNonQueryAsync(cancellationToken);
