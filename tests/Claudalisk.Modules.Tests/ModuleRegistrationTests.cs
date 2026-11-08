@@ -22,14 +22,14 @@ public sealed class ModuleRegistrationTests
     }
 
     [Fact]
-    public void AnAmbiguousDependencyNamesEveryProviderAndRegistersNothing()
+    public void TwoProvidersOfADependencyNameEveryProviderAndRegisterNothing()
     {
         var services = new ServiceCollection();
 
         var error = Assert.Throws<InvalidOperationException>(
             () => services.AddModules(Configuration, new OrdersModule(), new StorageModule(), new OtherStorageModule()));
 
-        Assert.Contains("ambiguous", error.Message);
+        Assert.Contains("both provide the contract", error.Message);
         Assert.Contains(typeof(StorageModule).FullName!, error.Message);
         Assert.Contains(typeof(OtherStorageModule).FullName!, error.Message);
         Assert.Empty(services);
@@ -59,6 +59,90 @@ public sealed class ModuleRegistrationTests
         Assert.Contains(typeof(INotAMarker).FullName!, error.Message);
         Assert.Contains("sealed class", error.Message);
         Assert.Empty(services);
+    }
+
+    [Fact]
+    public void ANullDependencyEntryIsRejectedNamingTheModule()
+    {
+        var services = new ServiceCollection();
+
+        var error = Assert.Throws<InvalidOperationException>(() => services.AddModules(Configuration, new NullDependencyModule(), new StorageModule()));
+
+        Assert.Contains(typeof(NullDependencyModule).FullName!, error.Message);
+        Assert.Empty(services);
+    }
+
+    [Fact]
+    public void ANullDependenciesCollectionIsRejectedNamingTheModule()
+    {
+        var services = new ServiceCollection();
+
+        var error = Assert.Throws<InvalidOperationException>(() => services.AddModules(Configuration, new NullDependenciesModule()));
+
+        Assert.Contains(typeof(NullDependenciesModule).FullName!, error.Message);
+        Assert.Empty(services);
+    }
+
+    [Fact]
+    public void AContractMustBeASealedMarkerClass()
+    {
+        var services = new ServiceCollection();
+
+        var error = Assert.Throws<InvalidOperationException>(() => services.AddModules(Configuration, new NonSealedContractModule()));
+
+        Assert.Contains(typeof(INotAMarker).FullName!, error.Message);
+        Assert.Contains("contract", error.Message);
+        Assert.Contains("sealed class", error.Message);
+        Assert.Empty(services);
+    }
+
+    [Fact]
+    public void TwoModulesWithTheSameContractAreRejectedEvenWhenNothingDependsOnIt()
+    {
+        var services = new ServiceCollection();
+
+        var error = Assert.Throws<InvalidOperationException>(
+            () => services.AddModules(Configuration, new StorageModule(), new OtherStorageModule()));
+
+        Assert.Contains(typeof(StorageModule).FullName!, error.Message);
+        Assert.Contains(typeof(OtherStorageModule).FullName!, error.Message);
+        Assert.Contains(typeof(StorageContract).FullName!, error.Message);
+        Assert.Empty(services);
+    }
+
+    [Fact]
+    public void AContractAlreadyInTheCatalogCannotBeProvidedByAnotherModule()
+    {
+        var services = new ServiceCollection();
+        services.AddModules(Configuration, new StorageModule());
+
+        var error = Assert.Throws<InvalidOperationException>(() => services.AddModules(Configuration, new OtherStorageModule()));
+
+        Assert.Contains(typeof(StorageModule).FullName!, error.Message);
+        Assert.Contains(typeof(OtherStorageModule).FullName!, error.Message);
+        Assert.Equal(["StorageModule"], Log(services).Modules);
+    }
+
+    [Fact]
+    public void CallingAddModulesFromConfigureServicesIsRejected()
+    {
+        var services = new ServiceCollection();
+
+        var error = Assert.Throws<InvalidOperationException>(() => services.AddModules(Configuration, new ReentrantModule()));
+
+        Assert.Contains("ConfigureServices", error.Message);
+        Assert.Empty(Catalog(services).Modules);
+    }
+
+    [Fact]
+    public void AThrowingConfigureServicesDoesNotLeaveTheCatalogLocked()
+    {
+        var services = new ServiceCollection();
+        Assert.Throws<InvalidOperationException>(() => services.AddModules(Configuration, new ThrowingModule()));
+
+        services.AddModules(Configuration, new StorageModule());
+
+        Assert.Equal(["Storage"], Catalog(services).Modules.Select(module => module.Name));
     }
 
     [Fact]

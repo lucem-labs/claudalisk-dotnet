@@ -8,9 +8,26 @@ internal static class ModuleOrder
         foreach (var module in modules)
         {
             RequireMarker(module.GetType(), module.Contract, "contract");
-            foreach (var dependency in module.Dependencies)
+            var dependencies = module.Dependencies
+                ?? throw new InvalidOperationException($"Module '{module.GetType().FullName}' has a null Dependencies collection.");
+            foreach (var dependency in dependencies)
             {
+                if (dependency is null)
+                {
+                    throw new InvalidOperationException($"Module '{module.GetType().FullName}' has a null entry in its Dependencies.");
+                }
+
                 RequireMarker(module.GetType(), dependency, "dependency");
+            }
+        }
+
+        var contractOwners = new Dictionary<Type, Type>();
+        foreach (var module in modules)
+        {
+            if (module.Contract is { } contract && !contractOwners.TryAdd(contract, module.GetType()))
+            {
+                throw new InvalidOperationException(
+                    $"Modules '{contractOwners[contract].FullName}' and '{module.GetType().FullName}' both provide the contract '{contract.FullName}'.");
             }
         }
 
@@ -40,13 +57,6 @@ internal static class ModuleOrder
                 {
                     throw new InvalidOperationException(
                         $"Module '{moduleType.FullName}' requires '{dependency.FullName}', but no module passed to AddModules provides it.");
-                }
-
-                if (providers.Length > 1)
-                {
-                    throw new InvalidOperationException(
-                        $"Module '{moduleType.FullName}' has an ambiguous dependency on '{dependency.FullName}': "
-                        + string.Join(", ", providers.Select(provider => provider.GetType().FullName)) + " all provide it.");
                 }
 
                 Visit(providers[0]);
