@@ -1,4 +1,6 @@
 using Claudalisk.Dispatching;
+using Claudalisk.Jobs;
+using Claudalisk.Jobs.PostgreSql;
 using Claudalisk.Modules;
 using Claudalisk.Persistence;
 using Microsoft.Extensions.Configuration;
@@ -45,16 +47,16 @@ public sealed class Refreshes
 
 internal sealed class RefreshCatalogHandler(Refreshes refreshes) : IHandler<RefreshCatalogCommand, int>
 {
-    public Task<int> HandleAsync(RefreshCatalogCommand message, CancellationToken cancellationToken)
+    public ValueTask<int> HandleAsync(RefreshCatalogCommand message, CancellationToken cancellationToken)
     {
         refreshes.Add(message.Source);
-        return Task.FromResult(refreshes.Sources.Count);
+        return ValueTask.FromResult(refreshes.Sources.Count);
     }
 }
 
 internal sealed class RebuildIndexHandler : IHandler<RebuildIndexCommand, int>
 {
-    public Task<int> HandleAsync(RebuildIndexCommand message, CancellationToken cancellationToken) => Task.FromResult(0);
+    public ValueTask<int> HandleAsync(RebuildIndexCommand message, CancellationToken cancellationToken) => ValueTask.FromResult(0);
 }
 
 public sealed class CatalogModule : IModule
@@ -70,14 +72,25 @@ public sealed class CatalogModule : IModule
 
 internal sealed record TestSchedule(string Name, string Cron, string Command = "refresh-catalog", string Module = "Catalog", string TimeZone = "UTC", string Arguments = """{"source":"nightly"}""");
 
+internal sealed record TestSettings(bool? Enabled = true, string TickInterval = "00:01:00", bool Workers = false);
+
 internal static class TestApp
 {
     public const string Image = "postgres:17-alpine";
     private const string TemplateDatabase = "scheduling_template";
 
     private static readonly Lazy<Task<string>> Server = new(StartAsync);
+    private static PostgreSqlContainer? _container;
 
     public static DateTimeOffset Start { get; } = new(2026, 10, 26, 10, 30, 0, TimeSpan.Zero);
+
+    public static async Task<string> CreateEmptyDatabaseAsync()
+    {
+        var admin = await Server.Value;
+        var name = $"scheduling_{Guid.NewGuid():N}";
+        await ExecuteAsync(admin, $"CREATE DATABASE \"{name}\"");
+        return new NpgsqlConnectionStringBuilder(admin) { Database = name }.ConnectionString;
+    }
 
     public static async Task<string> CreateDatabaseAsync()
     {
@@ -87,33 +100,42 @@ internal static class TestApp
         return new NpgsqlConnectionStringBuilder(admin) { Database = name }.ConnectionString;
     }
 
-    public static ServiceProvider Build(string connectionString, FakeTimeProvider time, Refreshes refreshes, bool enabled, params TestSchedule[] schedules)
+    public static ServiceProvider Build(string connectionString, FakeTimeProvider time, Refreshes refreshes, bool enabled, params TestSchedule[] schedules) =>
+        Services(connectionString, time, refreshes, new TestSettings(enabled), schedules).BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+
+    public static ServiceCollection Services(string connectionString, FakeTimeProvider time, Refreshes refreshes, TestSettings settings, params TestSchedule[] schedules)
     {
-        var settings = new Dictionary<string, string?>
+        var values = new Dictionary<string, string?>
         {
-            ["Scheduling:Enabled"] = enabled ? "true" : "false",
-            ["Scheduling:TickInterval"] = "00:01:00",
+            ["Scheduling:TickInterval"] = settings.TickInterval,
         };
-        for (var i = 0; i < schedules.Length; i++)
+        if (settings.Enabled is { } enabled)
         {
-            settings[$"Scheduling:Schedules:{i}:Name"] = schedules[i].Name;
-            settings[$"Scheduling:Schedules:{i}:Cron"] = schedules[i].Cron;
-            settings[$"Scheduling:Schedules:{i}:Command"] = schedules[i].Command;
-            settings[$"Scheduling:Schedules:{i}:Module"] = schedules[i].Module;
-            settings[$"Scheduling:Schedules:{i}:TimeZone"] = schedules[i].TimeZone;
-            settings[$"Scheduling:Schedules:{i}:Arguments"] = schedules[i].Arguments;
+            values["Scheduling:Enabled"] = enabled ? "true" : "false";
         }
 
-        var configuration = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
+        for (var i = 0; i < schedules.Length; i++)
+        {
+            values[$"Scheduling:Schedules:{i}:Name"] = schedules[i].Name;
+            values[$"Scheduling:Schedules:{i}:Cron"] = schedules[i].Cron;
+            values[$"Scheduling:Schedules:{i}:Command"] = schedules[i].Command;
+            values[$"Scheduling:Schedules:{i}:Module"] = schedules[i].Module;
+            values[$"Scheduling:Schedules:{i}:TimeZone"] = schedules[i].TimeZone;
+            values[$"Scheduling:Schedules:{i}:Arguments"] = schedules[i].Arguments;
+        }
+
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(values).Build();
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddPersistence(connectionString);
-        services.AddModules(configuration, new CatalogModule());
-        services.AddDispatching();
-        services.AddScheduling(configuration);
+        services.AddClaudaliskPersistence(connectionString);
+        services.AddClaudaliskModules(configuration, new CatalogModule());
+        services.AddClaudaliskDispatching();
+        services.AddClaudaliskJobs(options => options.WorkersEnabled = settings.Workers);
+        services.AddClaudaliskPostgreSqlJobs();
+        services.AddClaudaliskScheduling(configuration);
         services.AddSingleton<TimeProvider>(time);
         services.AddSingleton(refreshes);
-        return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        return services;
     }
 
     public static async Task StartOrExplainAsync(Func<Task> start)
@@ -130,11 +152,14 @@ internal static class TestApp
         }
     }
 
+    public static ValueTask DisposeContainerAsync() =>
+        Interlocked.Exchange(ref _container, null) is { } container ? container.DisposeAsync() : ValueTask.CompletedTask;
+
     private static async Task<string> StartAsync()
     {
         var container = new PostgreSqlBuilder(Image).Build();
+        _container = container;
         await StartOrExplainAsync(() => container.StartAsync());
-        AppDomain.CurrentDomain.ProcessExit += (_, _) => container.DisposeAsync().AsTask().GetAwaiter().GetResult();
 
         var admin = container.GetConnectionString();
         await ExecuteAsync(admin, $"CREATE DATABASE \"{TemplateDatabase}\"");

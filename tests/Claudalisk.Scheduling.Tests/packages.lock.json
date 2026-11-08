@@ -196,6 +196,11 @@
         "resolved": "10.0.14",
         "contentHash": "1bbZqqCJTPba3inTADExbp/9PsGVyvGOX3zr6tFr7ySCgVkX9Lpw7BV0TizktNItd3SsbUu1sQfSAYm1GZMoNw=="
       },
+      "Microsoft.OpenApi": {
+        "type": "Transitive",
+        "resolved": "2.12.2",
+        "contentHash": "ZkT7qiJe0Kj0+DTZOZo+xrDy1kNmdsWFQVPIQLNx9ZJ0T9cB2LG7r+Bi60so8/+yg1nkS7QCPadrzsTG4VPKrA=="
+      },
       "Microsoft.Testing.Extensions.Telemetry": {
         "type": "Transitive",
         "resolved": "2.5.1",
@@ -330,6 +335,16 @@
           "xunit.v3.runner.common": "[4.0.2]"
         }
       },
+      "claudalisk.aspnetcore": {
+        "type": "Project",
+        "dependencies": {
+          "Claudalisk.Dispatching.Abstractions": "[1.0.0, )",
+          "Claudalisk.Domain": "[1.0.0, )",
+          "Claudalisk.Modules": "[1.0.0, )",
+          "Claudalisk.Persistence.Abstractions": "[1.0.0, )",
+          "Microsoft.AspNetCore.OpenApi": "[10.0.14, )"
+        }
+      },
       "claudalisk.dispatching": {
         "type": "Project",
         "dependencies": {
@@ -341,6 +356,26 @@
       },
       "claudalisk.dispatching.abstractions": {
         "type": "Project"
+      },
+      "claudalisk.domain": {
+        "type": "Project"
+      },
+      "claudalisk.jobs": {
+        "type": "Project",
+        "dependencies": {
+          "Claudalisk.AspNetCore": "[1.0.0, )",
+          "Claudalisk.Dispatching": "[1.0.0, )",
+          "Claudalisk.Domain": "[1.0.0, )",
+          "Claudalisk.Modules": "[1.0.0, )",
+          "Claudalisk.Persistence.Abstractions": "[1.0.0, )"
+        }
+      },
+      "claudalisk.jobs.postgresql": {
+        "type": "Project",
+        "dependencies": {
+          "Claudalisk.Jobs": "[1.0.0, )",
+          "Claudalisk.Persistence": "[1.0.0, )"
+        }
       },
       "claudalisk.modules": {
         "type": "Project"
@@ -361,6 +396,8 @@
         "type": "Project",
         "dependencies": {
           "Claudalisk.Dispatching": "[1.0.0, )",
+          "Claudalisk.Jobs": "[1.0.0, )",
+          "Claudalisk.Jobs.PostgreSql": "[1.0.0, )",
           "Claudalisk.Modules": "[1.0.0, )",
           "Claudalisk.Persistence": "[1.0.0, )",
           "Cronos": "[0.13.0, )"
@@ -388,6 +425,15 @@
         "requested": "[12.2.0, )",
         "resolved": "12.2.0",
         "contentHash": "DR3lFbdnKucaaj1/8zMNOACMz/64igzox1yVZSFVsLxYB5mxAB+wFP1WZ8fjwrZnbU1KA1DoMzHKYKxUfuZ4wQ=="
+      },
+      "Microsoft.AspNetCore.OpenApi": {
+        "type": "CentralTransitive",
+        "requested": "[10.0.14, )",
+        "resolved": "10.0.14",
+        "contentHash": "3M6yO4nv8fmvM/1X7DqQcMxw/ptNLBcUzZt19SBEyfZF32gqZuwoPNnYd1xlDnFvQOGOkZDncf7p9E24blcTkQ==",
+        "dependencies": {
+          "Microsoft.OpenApi": "[2.12.2, 3.0.0)"
+        }
       },
       "Microsoft.EntityFrameworkCore.Relational": {
         "type": "CentralTransitive",

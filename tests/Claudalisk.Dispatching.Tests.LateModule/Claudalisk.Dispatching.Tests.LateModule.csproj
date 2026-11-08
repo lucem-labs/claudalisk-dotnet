@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="FluentValidation" />
+    <ProjectReference Include="..\..\src\Claudalisk.Dispatching.Abstractions\Claudalisk.Dispatching.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\Claudalisk.Modules\Claudalisk.Modules.csproj" />
+  </ItemGroup>
+</Project>

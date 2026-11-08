@@ -14,7 +14,7 @@ public sealed record JobOptions(string Lane = JobOptions.DefaultLane, string? De
     public const string DefaultLane = "default";
 }
 
-public sealed record JobError(string Type, string Title, string? Detail);
+public sealed record JobError(string Type, string Title, string? Detail, IReadOnlyDictionary<string, object?>? Extensions = null);
 
 public sealed record JobRecord(
     Guid Id,
@@ -104,9 +104,11 @@ public interface IEventPublisher
     Task PublishAsync(object integrationEvent, CancellationToken cancellationToken = default);
 }
 
-public interface IJobTransport
+internal interface IJobTransport
 {
-    Task<ClaimedJob?> ClaimAsync(JobsModule module, string lane, TimeSpan staleAfter, CancellationToken cancellationToken);
+    Task<ClaimedJob?> ClaimAsync(JobsModule module, string lane, CancellationToken cancellationToken);
+
+    Task SweepStaleAsync(JobsModule module, TimeSpan staleAfter, CancellationToken cancellationToken);
 
     Task WaitForWorkAsync(JobsModule module, string lane, TimeSpan timeout, CancellationToken cancellationToken);
 
@@ -131,11 +133,11 @@ public interface IJobTransport
     Task<int> DeleteFinishedBeforeAsync(JobsModule module, TimeSpan retention, CancellationToken cancellationToken);
 }
 
-public interface IJobWriter
+internal interface IJobWriter
 {
     Task<Guid> InsertAsync(JobsModule module, NewJob job, CancellationToken cancellationToken);
 
-    Task CompleteAsync(JobsModule module, Guid id, string? resultLink, CancellationToken cancellationToken);
+    Task<bool> CompleteAsync(JobsModule module, Guid id, int attempt, string? resultLink, CancellationToken cancellationToken);
 
     Task SaveCheckpointAsync(JobsModule module, Guid id, string checkpoint, double? progress, CancellationToken cancellationToken);
 

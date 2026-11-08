@@ -112,7 +112,7 @@ public sealed class JobsRouterTests
         builder.Services.AddSingleton<IDatabaseHealthProbe, AlwaysUp>();
         var app = builder.Build();
         app.UseClaudaliskWeb();
-        app.MapJobsRouter();
+        app.MapClaudaliskJobsRouter();
         await app.StartAsync();
         return app;
     }

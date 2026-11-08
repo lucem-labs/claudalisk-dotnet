@@ -14,21 +14,27 @@ internal sealed partial class SchedulerService(Scheduler scheduler, IOptions<Sch
             return;
         }
 
-        var schedules = scheduler.Schedules;
-        LogRunning(logger, schedules.Count, schedules);
+        var announced = false;
         using var timer = new PeriodicTimer(options.Value.TickInterval, time);
         do
         {
             try
             {
-                await scheduler.RunDueAsync(stoppingToken);
+                if (!announced)
+                {
+                    var schedules = scheduler.Schedules;
+                    LogRunning(logger, schedules.Count, schedules);
+                    announced = true;
+                }
+
+                await scheduler.RunDueAsync(stoppingToken).ConfigureAwait(false);
             }
             catch (Exception exception) when (!stoppingToken.IsCancellationRequested)
             {
                 LogTickFailed(logger, exception);
             }
         }
-        while (await timer.WaitForNextTickAsync(stoppingToken));
+        while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false));
     }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "The scheduler runs {Count} schedules: {Schedules}")]

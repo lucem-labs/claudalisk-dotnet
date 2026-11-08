@@ -80,3 +80,35 @@ public sealed class OrdersController : ControllerBase
     [HttpGet]
     public IActionResult Get() => Ok("orders");
 }
+
+public sealed class NullDependencyModule() : TestModule(null, [null!]);
+
+public sealed class NullDependenciesModule : IModule
+{
+    public IReadOnlyCollection<Type> Dependencies => null!;
+
+    public void ConfigureServices(IServiceCollection services, IConfiguration configuration)
+    {
+    }
+}
+
+public sealed class InterfaceContractModule : IModule
+{
+    public Type? Contract => typeof(INotAMarker);
+
+    public void ConfigureServices(IServiceCollection services, IConfiguration configuration)
+    {
+    }
+}
+
+public sealed class ReentrantModule : IModule
+{
+    public void ConfigureServices(IServiceCollection services, IConfiguration configuration) =>
+        services.AddClaudaliskModules(configuration, new StorageModule());
+}
+
+public sealed class ThrowingModule : IModule
+{
+    public void ConfigureServices(IServiceCollection services, IConfiguration configuration) =>
+        throw new InvalidOperationException("boom");
+}

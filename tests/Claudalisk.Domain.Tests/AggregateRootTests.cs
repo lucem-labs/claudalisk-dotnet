@@ -38,6 +38,23 @@ public sealed class AggregateRootTests
     }
 
     [Fact]
+    public void TheCurrentVersionIsAccepted()
+    {
+        new Order(4).RequireVersion(4);
+    }
+
+    [Theory]
+    [InlineData(3)]
+    [InlineData(5)]
+    public void AnotherVersionIsStale(long expected)
+    {
+        var error = Assert.Throws<StaleVersionException>(() => new Order(4).RequireVersion(expected));
+
+        Assert.Equal((expected, 4), (error.ExpectedVersion, error.ActualVersion));
+        Assert.Equal($"The resource is at version 4, but the request expected version {expected}. Read it again.", error.Message);
+    }
+
+    [Fact]
     public void ChangingTheAggregateRecordsItsEventsInOrder()
     {
         var order = new Order();

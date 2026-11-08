@@ -6,23 +6,25 @@ internal sealed class JobsPipelineStep(JobContext job, EventPublisher publisher,
 {
     private int _depth;
 
+    public int Order => PipelineOrder.UnitOfWork + 1000;
+
     public async Task<object?> InvokeAsync(MessageContext context, Func<CancellationToken, Task<object?>> next, CancellationToken cancellationToken)
     {
         if (context.Kind != MessageKind.Command)
         {
-            return await next(cancellationToken);
+            return await next(cancellationToken).ConfigureAwait(false);
         }
 
         _depth++;
         try
         {
-            var result = await next(cancellationToken);
+            var result = await next(cancellationToken).ConfigureAwait(false);
             if (_depth == 1)
             {
-                await publisher.PublishTrackedAsync(cancellationToken);
+                await publisher.PublishTrackedAsync(cancellationToken).ConfigureAwait(false);
                 if (job.IsActive && !job.Completed && ReferenceEquals(context.Message, job.Command))
                 {
-                    await writer.CompleteAsync(job.JobsModule, job.JobId, job.ResultLink, cancellationToken);
+                    await job.CompleteAsync(writer, cancellationToken).ConfigureAwait(false);
                     job.Completed = true;
                 }
             }

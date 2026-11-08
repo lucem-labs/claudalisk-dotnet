@@ -30,7 +30,7 @@ public sealed partial class JobsModule
 
         Name = name;
         Schema = schema!;
-        Segment = Claudalisk.AspNetCore.NameSegments.Kebab(name);
+        Segment = Claudalisk.Modules.NameSegments.Kebab(name);
     }
 
     public string Name { get; }
@@ -42,6 +42,8 @@ public sealed partial class JobsModule
     public IReadOnlyDictionary<string, int> Lanes => _lanes;
 
     public TimeSpan? Retention { get; private set; }
+
+    internal bool LibraryOwned { get; set; }
 
     public IReadOnlyDictionary<string, JobKind> Kinds => _kinds;
 
@@ -94,6 +96,12 @@ public sealed class ModuleJobsBuilder
     public JobsModule Module { get; }
 
     internal JobsRegistry Registry { get; }
+
+    internal ModuleJobsBuilder LibraryOwned()
+    {
+        Module.LibraryOwned = true;
+        return this;
+    }
 
     public ModuleJobsBuilder Lane(string lane, int workers)
     {
@@ -189,15 +197,21 @@ public sealed class JobsRegistry
 
     public IReadOnlyList<EventSubscription> Subscriptions => _subscriptions;
 
-    public JobsModule? Find(string nameOrSegment) =>
-        _modules.TryGetValue(nameOrSegment, out var module)
+    public JobsModule? Find(string nameOrSegment)
+    {
+        ArgumentNullException.ThrowIfNull(nameOrSegment);
+        return _modules.TryGetValue(nameOrSegment, out var module)
             ? module
             : _modules.Values.FirstOrDefault(candidate => string.Equals(candidate.Segment, nameOrSegment, StringComparison.OrdinalIgnoreCase));
+    }
 
-    public JobsModule ModuleFor(Type payloadType) =>
-        _modules.Values.FirstOrDefault(module => module.KindFor(payloadType) is not null)
-        ?? throw new InvalidOperationException(
-            $"No module registers '{payloadType.FullName}' as a job. Register it with AddModuleJobs(...).Command<{payloadType.Name}>(\"<kind>\").");
+    public JobsModule ModuleFor(Type payloadType)
+    {
+        ArgumentNullException.ThrowIfNull(payloadType);
+        return _modules.Values.FirstOrDefault(module => !module.LibraryOwned && module.KindFor(payloadType) is not null)
+            ?? throw new InvalidOperationException(
+                $"No module registers '{payloadType.FullName}' as a job. Register it with AddClaudaliskModuleJobs(...).Command<{payloadType.Name}>(\"<kind>\").");
+    }
 
     internal object? Map(object domainEvent) =>
         _mappings.TryGetValue(domainEvent.GetType(), out var map) ? map(domainEvent) : null;

@@ -1,3 +1,5 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Npgsql;
 
 namespace Claudalisk.Persistence;
@@ -8,7 +10,26 @@ internal sealed class DbSession(NpgsqlDataSource dataSource) : IScopeConnection,
 
     public NpgsqlTransaction? Transaction { get; set; }
 
-    public NpgsqlTransaction? LastFinishedTransaction { get; set; }
+    public List<DbContext> EnlistedContexts { get; } = [];
+
+    public void ReleaseEnlistedContexts(NpgsqlTransaction transaction)
+    {
+        foreach (var context in EnlistedContexts)
+        {
+            try
+            {
+                if (ReferenceEquals(context.Database.CurrentTransaction?.GetDbTransaction(), transaction))
+                {
+                    context.Database.UseTransaction(null);
+                }
+            }
+            catch (Exception exception) when (exception is not OutOfMemoryException)
+            {
+            }
+        }
+
+        EnlistedContexts.Clear();
+    }
 
     public void Dispose() => Connection.Dispose();
 

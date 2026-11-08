@@ -11,6 +11,7 @@ internal static class PostgresServer
     private const string TemplateDatabase = "dispatching_template";
 
     private static readonly Lazy<Task<string>> Server = new(StartAsync);
+    private static PostgreSqlContainer? _container;
 
     public static async Task<ServiceProvider> CreateAppAsync(Action<IServiceCollection>? configure = null)
     {
@@ -41,11 +42,14 @@ internal static class PostgresServer
         return new NpgsqlConnectionStringBuilder(admin) { Database = name }.ConnectionString;
     }
 
+    public static ValueTask DisposeContainerAsync() =>
+        Interlocked.Exchange(ref _container, null) is { } container ? container.DisposeAsync() : ValueTask.CompletedTask;
+
     private static async Task<string> StartAsync()
     {
         var container = new PostgreSqlBuilder(Image).Build();
+        _container = container;
         await StartOrExplainAsync(() => container.StartAsync());
-        AppDomain.CurrentDomain.ProcessExit += (_, _) => container.DisposeAsync().AsTask().GetAwaiter().GetResult();
 
         var admin = container.GetConnectionString();
         await ExecuteAsync(admin, $"CREATE DATABASE \"{TemplateDatabase}\"");

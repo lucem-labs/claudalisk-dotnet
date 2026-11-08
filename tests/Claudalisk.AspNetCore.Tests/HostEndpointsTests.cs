@@ -2,6 +2,8 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Claudalisk.AspNetCore.Tests;
 
@@ -50,6 +52,18 @@ public sealed class HostEndpointsTests
     }
 
     [Fact]
+    public async Task AnUnavailableDatabaseIsLoggedAtWarningWithoutAnException()
+    {
+        var log = new LogCollector();
+        await using var app = await TestApp.StartAsync(connected: false, configureServices: services => services.AddLogging(logging => logging.AddProvider(log)));
+
+        await app.GetTestClient().GetAsync("/api/health", TestContext.Current.CancellationToken);
+
+        var entry = Assert.Single(log.Entries, entry => entry.Category == typeof(HealthEndpoint).FullName);
+        Assert.Equal((LogLevel.Warning, false), (entry.Level, entry.HasException));
+    }
+
+    [Fact]
     public async Task TheOpenAPIDocumentTagsEachOperationWithItsModuleAndHealthWithHost()
     {
         await using var app = await TestApp.StartAsync();
@@ -91,6 +105,61 @@ public sealed class HostEndpointsTests
 
         Assert.Equal("Invoices and payments.", tags["Billing"]);
         Assert.Equal(ModuleTags.HostDescription, tags["Host"]);
+    }
+
+    [Fact]
+    public async Task TheUnavailableHealthResponseHasTheDependencyProblemTypeAndRetryAfter()
+    {
+        await using var app = await TestApp.StartAsync(connected: false, configure: options => options.DefaultRetryAfter = TimeSpan.FromSeconds(45));
+
+        var response = await app.GetTestClient().GetAsync("/api/health", TestContext.Current.CancellationToken);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
+
+        Assert.Equal("/problems/dependency-unavailable", body.GetProperty("type").GetString());
+        Assert.Equal(503, body.GetProperty("status").GetInt32());
+        Assert.Equal("45", Assert.Single(response.Headers.GetValues("Retry-After")));
+    }
+
+    [Fact]
+    public async Task EveryOperationListsTheProblemTypesOfTheWebPackage()
+    {
+        await using var app = await TestApp.StartAsync();
+
+        var document = await app.GetTestClient().GetFromJsonAsync<JsonElement>("/openapi/v1.json", TestContext.Current.CancellationToken);
+        var operations = document.GetProperty("paths").EnumerateObject()
+            .SelectMany(path => path.Value.EnumerateObject().Select(operation => (Name: $"{operation.Name} {path.Name}", operation.Value)))
+            .ToList();
+
+        Assert.True(operations.Count > 1);
+        Assert.Contains(operations, operation => operation.Name.StartsWith("get ", StringComparison.Ordinal));
+        Assert.Contains(operations, operation => operation.Name == "get /api/health");
+        foreach (var (name, operation) in operations)
+        {
+            var responses = operation.GetProperty("responses");
+            foreach (var (status, type) in new[] { ("409", "/problems/concurrency-conflict"), ("412", "/problems/precondition-failed"), ("428", "/problems/precondition-required"), ("503", "/problems/dependency-unavailable") })
+            {
+                Assert.True(responses.TryGetProperty(status, out var response), $"{name} lists no {status}");
+                var description = response.GetProperty("description").GetString()!;
+                if (description.Contains("Problem type", StringComparison.Ordinal))
+                {
+                    Assert.Contains(type, description, StringComparison.Ordinal);
+                    var schema = response.GetProperty("content").GetProperty("application/problem+json").GetProperty("schema");
+                    Assert.True(schema.GetProperty("properties").TryGetProperty("title", out _));
+                }
+            }
+        }
+    }
+
+    [Fact]
+    public async Task ADeclaredResponseIsNotOverwritten()
+    {
+        await using var app = await TestApp.StartAsync();
+
+        var document = await app.GetTestClient().GetFromJsonAsync<JsonElement>("/openapi/v1.json", TestContext.Current.CancellationToken);
+        var responses = document.GetProperty("paths").GetProperty("/api/health").GetProperty("get").GetProperty("responses");
+
+        Assert.DoesNotContain("Problem type", responses.GetProperty("503").GetProperty("description").GetString(), StringComparison.Ordinal);
+        Assert.True(responses.TryGetProperty("409", out _));
     }
 
     [Fact]

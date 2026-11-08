@@ -336,6 +336,17 @@
       "claudalisk.dispatching.abstractions": {
         "type": "Project"
       },
+      "claudalisk.dispatching.tests.latemodule": {
+        "type": "Project",
+        "dependencies": {
+          "Claudalisk.Dispatching.Abstractions": "[1.0.0, )",
+          "Claudalisk.Modules": "[1.0.0, )",
+          "FluentValidation": "[12.2.0, )"
+        }
+      },
+      "claudalisk.domain": {
+        "type": "Project"
+      },
       "claudalisk.modules": {
         "type": "Project"
       },

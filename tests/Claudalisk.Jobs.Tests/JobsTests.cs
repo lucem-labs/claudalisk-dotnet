@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Claudalisk.Dispatching;
 using Claudalisk.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -77,7 +78,7 @@ public sealed class JobsTests
         var claims = await Task.WhenAll(Enumerable.Range(0, 4).Select(async _ =>
         {
             var mine = new List<Guid>();
-            while (await transport.ClaimAsync(orders, JobOptions.DefaultLane, TimeSpan.FromMinutes(2), TestContext.Current.CancellationToken) is { } claimed)
+            while (await transport.ClaimAsync(orders, JobOptions.DefaultLane, TestContext.Current.CancellationToken) is { } claimed)
             {
                 mine.Add(claimed.Id);
             }
@@ -163,6 +164,58 @@ public sealed class JobsTests
     }
 
     [Fact]
+    public async Task ADomainErrorThrownSynchronouslyByAnEventHandlerFailsTheDeliveryAtOnceWithItsProblemType()
+    {
+        await using var app = await PostgresServer.CreateAppAsync();
+        await using (var scope = app.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().RunAsync(
+                token => scope.ServiceProvider.GetRequiredService<IEventPublisher>().PublishAsync(new OrderShipped(Guid.NewGuid()), token),
+                TestContext.Current.CancellationToken);
+        }
+
+        Assert.Equal(1, await Runner(app).RunUntilIdleAsync("Mail", cancellationToken: TestContext.Current.CancellationToken));
+
+        Assert.Equal(1, await CountAsync(
+            app, "mail.jobs WHERE kind = 'refuse-on-order-shipped' AND status = 'failed' AND attempts = 1 AND last_error->>'type' = '/problems/orders/order-refused'"));
+    }
+
+    [Fact]
+    public async Task ADomainErrorsExtensionsAreStoredWithTheJobsErrorAndShownByTheRouter()
+    {
+        await using var app = await PostgresServer.CreateAppAsync();
+        var job = await EnqueueAsync(app, new LimitedCommand(5));
+
+        Assert.Equal(1, await Runner(app).RunUntilIdleAsync("Orders", cancellationToken: TestContext.Current.CancellationToken));
+
+        var failed = (await JobAsync(app, "Orders", job.Id))!;
+        var extensions = failed.LastError!.Extensions!;
+        Assert.Equal((5, "eu"), (((JsonElement)extensions["limit"]!).GetInt32(), ((JsonElement)extensions["region"]!).GetString()));
+        var shown = JobsRouter.Represent(Registry(app).Find("Orders")!, failed).Error!;
+        Assert.Equal(extensions.Keys.Order(), shown.Extensions!.Keys.Order());
+    }
+
+    [Fact]
+    public void ADomainErrorFromAnotherModuleGetsThatModulesProblemType()
+    {
+        var error = JobRunner.ErrorFor(new Modules.Billing.RefundDenied(), null);
+
+        Assert.Equal("/problems/billing/refund-denied", error.Type);
+    }
+
+    [Fact]
+    public async Task AStaleVersionFailsTheJobAtOnceWithThePreconditionType()
+    {
+        await using var app = await PostgresServer.CreateAppAsync();
+        var job = await EnqueueAsync(app, new StaleCommand("A-1"));
+
+        Assert.Equal(1, await Runner(app).RunUntilIdleAsync("Orders", cancellationToken: TestContext.Current.CancellationToken));
+
+        var failed = (await JobAsync(app, "Orders", job.Id))!;
+        Assert.Equal((JobStatus.Failed, 1, "/problems/precondition-failed"), (failed.Status, failed.Attempts, failed.LastError!.Type));
+    }
+
+    [Fact]
     public async Task AnUnavailableDependencyIsRetriedNoSoonerThanTheWaitItCarries()
     {
         await using var app = await PostgresServer.CreateAppAsync();
@@ -196,13 +249,57 @@ public sealed class JobsTests
         var job = await EnqueueAsync(app, new FlakyCommand(0));
         var transport = app.GetRequiredService<IJobTransport>();
         var orders = Registry(app).Find("Orders")!;
-        Assert.Equal(job.Id, (await transport.ClaimAsync(orders, JobOptions.DefaultLane, TimeSpan.FromMinutes(2), TestContext.Current.CancellationToken))!.Id);
-        Assert.Null(await transport.ClaimAsync(orders, JobOptions.DefaultLane, TimeSpan.FromMinutes(2), TestContext.Current.CancellationToken));
+        Assert.Equal(job.Id, (await transport.ClaimAsync(orders, JobOptions.DefaultLane, TestContext.Current.CancellationToken))!.Id);
+        Assert.Null(await transport.ClaimAsync(orders, JobOptions.DefaultLane, TestContext.Current.CancellationToken));
 
         await ExecuteAsync(app, $"UPDATE orders.jobs SET heartbeat_at = now() - interval '3 minutes' WHERE id = '{job.Id}'");
 
-        var reclaimed = await transport.ClaimAsync(orders, JobOptions.DefaultLane, TimeSpan.FromMinutes(2), TestContext.Current.CancellationToken);
+        Assert.Null(await transport.ClaimAsync(orders, JobOptions.DefaultLane, TestContext.Current.CancellationToken));
+        await transport.SweepStaleAsync(orders, TimeSpan.FromMinutes(2), TestContext.Current.CancellationToken);
+        var reclaimed = await transport.ClaimAsync(orders, JobOptions.DefaultLane, TestContext.Current.CancellationToken);
         Assert.Equal((job.Id, 2), (reclaimed!.Id, reclaimed.Attempts));
+    }
+
+    [Fact(Timeout = 60_000)]
+    public async Task AJobWhoseRowWasRequeuedAsStaleAndClaimedAgainCommitsNoneOfItsWrites()
+    {
+        await using var app = await PostgresServer.CreateAppAsync(options => options.HeartbeatInterval = TimeSpan.FromHours(1));
+        var orderId = Guid.NewGuid();
+        await SendAsync<JobReference>(app, new PlaceOrderCommand(orderId, "A-1", FailAfterQueueing: false));
+        var held = app.GetRequiredService<Signals>().Hold(orderId);
+        var running = Runner(app).RunNextAsync("Orders", cancellationToken: TestContext.Current.CancellationToken);
+        await held.Started.Task;
+        await ExecuteAsync(app, "UPDATE orders.jobs SET heartbeat_at = now() - interval '3 minutes'");
+        var transport = app.GetRequiredService<IJobTransport>();
+        await transport.SweepStaleAsync(Registry(app).Find("Orders")!, TimeSpan.FromMinutes(2), TestContext.Current.CancellationToken);
+        var reclaimed = await transport.ClaimAsync(Registry(app).Find("Orders")!, JobOptions.DefaultLane, TestContext.Current.CancellationToken);
+
+        held.Release.SetResult();
+        await running;
+
+        Assert.Equal(2, reclaimed!.Attempts);
+        var record = (await JobAsync(app, "Orders", reclaimed.Id))!;
+        Assert.Equal((JobStatus.Running, 2, null), (record.Status, record.Attempts, record.LastError));
+        Assert.Equal(0, await CountAsync(app, "orders.orders WHERE shipped"));
+    }
+
+    [Fact]
+    public async Task TheStaleSweepSettlesTheStaleJobsOfEveryLane()
+    {
+        await using var app = await PostgresServer.CreateAppAsync();
+        var requeued = await EnqueueAsync(app, new FlakyCommand(0), new JobOptions(Lane: "slow"));
+        var exhausted = await EnqueueAsync(app, new StrictCommand("A-1"), new JobOptions(Lane: "slow", MaxAttempts: 1));
+        var transport = app.GetRequiredService<IJobTransport>();
+        var orders = Registry(app).Find("Orders")!;
+        await transport.ClaimAsync(orders, "slow", TestContext.Current.CancellationToken);
+        await transport.ClaimAsync(orders, "slow", TestContext.Current.CancellationToken);
+        await ExecuteAsync(app, "UPDATE orders.jobs SET heartbeat_at = now() - interval '3 minutes', lane = CASE WHEN id = '" + exhausted.Id + "' THEN 'ghost' ELSE lane END");
+
+        await transport.SweepStaleAsync(orders, TimeSpan.FromMinutes(2), TestContext.Current.CancellationToken);
+
+        Assert.Equal(JobStatus.Queued, (await JobAsync(app, "Orders", requeued.Id))!.Status);
+        var failed = (await JobAsync(app, "Orders", exhausted.Id))!;
+        Assert.Equal((JobStatus.Failed, "/problems/jobs/stale"), (failed.Status, failed.LastError!.Type));
     }
 
     [Fact]

@@ -129,7 +129,7 @@ public sealed class DispatcherTests
         var dispatcher = scope.ServiceProvider.GetRequiredService<IDispatcher>();
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => Task.WhenAll(dispatcher.SendAsync<int>(new CountOrdersQuery(), TestContext.Current.CancellationToken), dispatcher.SendAsync<int>(new CountChargesQuery(), TestContext.Current.CancellationToken)));
+            () => Task.WhenAll(dispatcher.SendAsync<int>(new CountOrdersQuery(), TestContext.Current.CancellationToken).AsTask(), dispatcher.SendAsync<int>(new CountChargesQuery(), TestContext.Current.CancellationToken).AsTask()));
 
         Assert.Contains("one at a time", error.Message);
     }
@@ -159,39 +159,47 @@ public sealed class DispatcherTests
                 (LogLevel.Debug, "Handling Query WhichScopeQuery", false),
                 (LogLevel.Debug, "Handled Query WhichScopeQuery", false),
                 (LogLevel.Debug, "Handling Query PeekOrdersQuery", false),
-                (LogLevel.Information, "Query PeekOrdersQuery failed: The query failed after it wrote.", true),
+                (LogLevel.Warning, "Query PeekOrdersQuery failed", true),
             ],
             log.Entries.Where(entry => entry.Category == typeof(IDispatcher).FullName).Select(entry => (entry.Level, entry.Message, entry.HasException)));
     }
 
-    private sealed record OrderPlaced;
-
-    private sealed class LogCollector : ILoggerProvider
+    [Fact]
+    public async Task ACanceledSendLogsAtDebugWithoutTheException()
     {
-        public List<(string Category, LogLevel Level, string Message, bool HasException)> Entries { get; } = [];
+        var log = new LogCollector();
+        await using var app = await PostgresServer.CreateAppAsync(services =>
+            services.AddLogging(logging => logging.SetMinimumLevel(LogLevel.Debug).AddProvider(log)));
+        using var cancellation = new CancellationTokenSource();
+        await using var scope = app.CreateAsyncScope();
+        var gate = app.GetRequiredService<Gate>();
 
-        public ILogger CreateLogger(string categoryName) => new Collector(this, categoryName);
+        var send = scope.ServiceProvider.GetRequiredService<IDispatcher>().SendAsync<int>(new GateQuery(), cancellation.Token).AsTask();
+        await gate.Entered.Task.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+        await cancellation.CancelAsync();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => send);
 
-        public void Dispose()
-        {
-        }
-
-        private sealed class Collector(LogCollector owner, string category) : ILogger
-        {
-            public IDisposable? BeginScope<TState>(TState state)
-                where TState : notnull => null;
-
-            public bool IsEnabled(LogLevel logLevel) => true;
-
-            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
-            {
-                lock (owner.Entries)
-                {
-                    owner.Entries.Add((category, logLevel, formatter(state, exception), exception is not null));
-                }
-            }
-        }
+        Assert.Contains(
+            log.Entries,
+            entry => entry.Category == typeof(IDispatcher).FullName && entry is { Level: LogLevel.Debug, HasException: false, Message: "Query GateQuery was canceled" });
+        Assert.DoesNotContain(log.Entries, entry => entry.Category == typeof(IDispatcher).FullName && entry.Level >= LogLevel.Information);
     }
+
+    [Fact]
+    public async Task AValidationFailureLogsAtInformationWithoutTheException()
+    {
+        var log = new LogCollector();
+        await using var app = await PostgresServer.CreateAppAsync(services =>
+            services.AddLogging(logging => logging.SetMinimumLevel(LogLevel.Debug).AddProvider(log)));
+
+        await Assert.ThrowsAsync<MessageValidationException>(() => SendAsync<Guid>(app, new PlaceOrderCommand(Guid.NewGuid(), "")));
+
+        var rejected = Assert.Single(log.Entries, entry => entry.Category == typeof(IDispatcher).FullName && entry.Level == LogLevel.Information);
+        Assert.False(rejected.HasException);
+        Assert.StartsWith("Command PlaceOrderCommand was rejected: ", rejected.Message);
+    }
+
+    private sealed record OrderPlaced;
 
     private static async Task<T> SendAsync<T>(IServiceProvider app, object message)
     {

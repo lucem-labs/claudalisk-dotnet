@@ -99,7 +99,7 @@ internal static class TestModulesRegistration
 {
     public static IServiceCollection AddTestModules(this IServiceCollection services, string connectionString) =>
         services
-            .AddPersistence(connectionString)
+            .AddClaudaliskPersistence(connectionString)
             .AddModuleDbContext<OrdersDbContext>(OrdersDbContext.Schema)
             .AddModuleDbContext<BillingDbContext>(BillingDbContext.Schema)
             .AddScoped<OrderStore>()

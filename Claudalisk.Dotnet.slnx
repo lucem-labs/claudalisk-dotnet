@@ -21,6 +21,7 @@
     <Project Path="tests/Claudalisk.AspNetCore.Tests/Claudalisk.AspNetCore.Tests.csproj" />
     <Project Path="tests/Claudalisk.Ci.Tests/Claudalisk.Ci.Tests.csproj" />
     <Project Path="tests/Claudalisk.Dispatching.Tests/Claudalisk.Dispatching.Tests.csproj" />
+    <Project Path="tests/Claudalisk.Dispatching.Tests.LateModule/Claudalisk.Dispatching.Tests.LateModule.csproj" />
     <Project Path="tests/Claudalisk.Domain.Tests/Claudalisk.Domain.Tests.csproj" />
     <Project Path="tests/Claudalisk.Jobs.Tests/Claudalisk.Jobs.Tests.csproj" />
     <Project Path="tests/Claudalisk.Modules.Tests/Claudalisk.Modules.Tests.csproj" />

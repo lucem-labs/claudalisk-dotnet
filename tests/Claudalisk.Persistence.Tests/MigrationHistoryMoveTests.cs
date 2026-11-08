@@ -40,8 +40,8 @@ public sealed class MigrationHistoryMoveTests
         await ExecuteAsync(database, "CREATE SCHEMA shop; ALTER TABLE orders.\"__EFMigrationsHistory\" SET SCHEMA shop");
         await ExecuteAsync(database, "CREATE SCHEMA till; CREATE TABLE till.\"__EFMigrationsHistory\" (migration_id varchar(150) PRIMARY KEY, product_version varchar(32) NOT NULL)");
         await using var app = PostgresServer.CreateApp(database, services => services
-            .AddMovedMigrationHistory("shop", OrdersDbContext.Schema)
-            .AddMovedMigrationHistory("till", BillingDbContext.Schema));
+            .AddClaudaliskMovedMigrationHistory("shop", OrdersDbContext.Schema)
+            .AddClaudaliskMovedMigrationHistory("till", BillingDbContext.Schema));
         await using var scope = app.CreateAsyncScope();
 
         var refused = await Assert.ThrowsAsync<MigrationHistoryMoveException>(
@@ -67,10 +67,10 @@ public sealed class MigrationHistoryMoveTests
     public void AMoveNamesTwoDifferentLowerCaseSchemasAndIsRegisteredOnce()
     {
         var services = new ServiceCollection();
-        Assert.Throws<ArgumentException>(() => services.AddMovedMigrationHistory("orders", "orders"));
-        Assert.Throws<ArgumentException>(() => services.AddMovedMigrationHistory("Shop", "orders"));
+        Assert.Throws<ArgumentException>(() => services.AddClaudaliskMovedMigrationHistory("orders", "orders"));
+        Assert.Throws<ArgumentException>(() => services.AddClaudaliskMovedMigrationHistory("Shop", "orders"));
 
-        services.AddMovedMigrationHistory("shop", "orders").AddMovedMigrationHistory("shop", "orders");
+        services.AddClaudaliskMovedMigrationHistory("shop", "orders").AddClaudaliskMovedMigrationHistory("shop", "orders");
 
         Assert.Single(services, descriptor => descriptor.ImplementationInstance is MovedMigrationHistory);
     }
@@ -78,10 +78,10 @@ public sealed class MigrationHistoryMoveTests
     [Fact]
     public void AConflictingMoveIsRejected()
     {
-        var services = new ServiceCollection().AddMovedMigrationHistory("shop", "orders");
+        var services = new ServiceCollection().AddClaudaliskMovedMigrationHistory("shop", "orders");
 
-        var otherSource = Assert.Throws<InvalidOperationException>(() => services.AddMovedMigrationHistory("till", "orders"));
-        var otherTarget = Assert.Throws<InvalidOperationException>(() => services.AddMovedMigrationHistory("shop", "billing"));
+        var otherSource = Assert.Throws<InvalidOperationException>(() => services.AddClaudaliskMovedMigrationHistory("till", "orders"));
+        var otherTarget = Assert.Throws<InvalidOperationException>(() => services.AddClaudaliskMovedMigrationHistory("shop", "billing"));
 
         Assert.Contains("'shop'", otherSource.Message);
         Assert.Contains("'till'", otherSource.Message);
@@ -94,10 +94,10 @@ public sealed class MigrationHistoryMoveTests
     public void AMoveThatConflictsWithTwoEarlierMovesNamesOneOfThem()
     {
         var services = new ServiceCollection()
-            .AddMovedMigrationHistory("shop", "orders")
-            .AddMovedMigrationHistory("till", "billing");
+            .AddClaudaliskMovedMigrationHistory("shop", "orders")
+            .AddClaudaliskMovedMigrationHistory("till", "billing");
 
-        var conflict = Assert.Throws<InvalidOperationException>(() => services.AddMovedMigrationHistory("shop", "billing"));
+        var conflict = Assert.Throws<InvalidOperationException>(() => services.AddClaudaliskMovedMigrationHistory("shop", "billing"));
 
         Assert.Contains("is already registered and conflicts with the move from 'shop' to 'billing'", conflict.Message);
     }
@@ -108,7 +108,7 @@ public sealed class MigrationHistoryMoveTests
         {
             if (moved)
             {
-                services.AddMovedMigrationHistory("shop", OrdersDbContext.Schema);
+                services.AddClaudaliskMovedMigrationHistory("shop", OrdersDbContext.Schema);
             }
         });
         await using var scope = app.CreateAsyncScope();

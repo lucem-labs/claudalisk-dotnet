@@ -26,15 +26,27 @@ public sealed record StrictCommand(string Reference);
 
 public sealed record RefusedCommand(string Reference);
 
+public sealed record LimitedCommand(int Limit);
+
+public sealed record StaleCommand(string Reference);
+
 public sealed record OutageCommand(int WaitMinutes);
 
 public sealed class OrderRefused() : DomainException("order-refused", "The order is refused.", DomainErrorKind.Conflict);
+
+public sealed class OrderLimitReached(int limit) : DomainException(
+    "order-limit-reached",
+    "The order limit is reached.",
+    DomainErrorKind.Conflict,
+    new Dictionary<string, object?> { ["limit"] = limit, ["region"] = "eu" });
 
 public sealed record WaitCommand(Guid Key, double Progress);
 
 public sealed record CancelOrderCommand(Guid OrderId, bool FailAfterCancel);
 
 public sealed record OrderCanceled(Guid OrderId);
+
+public sealed record OrderShipped(Guid OrderId);
 
 internal sealed record ImportOrdersCommand(int Total, int CrashWhenDone);
 
@@ -124,6 +136,33 @@ public sealed class Computations
 public sealed class Signals
 {
     private readonly Dictionary<Guid, (TaskCompletionSource Started, TaskCompletionSource Release)> _waits = [];
+    private readonly HashSet<Guid> _held = [];
+
+    public (TaskCompletionSource Started, TaskCompletionSource Release) Hold(Guid key)
+    {
+        lock (_waits)
+        {
+            _held.Add(key);
+        }
+
+        return For(key);
+    }
+
+    public async Task HoldIfAskedAsync(Guid key, CancellationToken cancellationToken)
+    {
+        bool held;
+        lock (_waits)
+        {
+            held = _held.Contains(key);
+        }
+
+        if (held)
+        {
+            var (started, release) = For(key);
+            started.TrySetResult();
+            await release.Task.WaitAsync(cancellationToken);
+        }
+    }
 
     public (TaskCompletionSource Started, TaskCompletionSource Release) For(Guid key)
     {
@@ -142,7 +181,7 @@ public sealed class Signals
 
 internal sealed class PlaceOrderHandler(OrdersDbContext db, IJobQueue jobs) : IHandler<PlaceOrderCommand, JobReference>
 {
-    public async Task<JobReference> HandleAsync(PlaceOrderCommand message, CancellationToken cancellationToken)
+    public async ValueTask<JobReference> HandleAsync(PlaceOrderCommand message, CancellationToken cancellationToken)
     {
         db.Orders.Add(new OrderRow { Id = message.Id, Reference = message.Reference });
         await db.SaveChangesAsync(cancellationToken);
@@ -156,13 +195,14 @@ internal sealed class PlaceOrderHandler(OrdersDbContext db, IJobQueue jobs) : IH
     }
 }
 
-internal sealed class ShipOrderHandler(OrdersDbContext db, IJobContext job) : IHandler<ShipOrderCommand, Guid>
+internal sealed class ShipOrderHandler(OrdersDbContext db, IJobContext job, Signals signals) : IHandler<ShipOrderCommand, Guid>
 {
-    public async Task<Guid> HandleAsync(ShipOrderCommand message, CancellationToken cancellationToken)
+    public async ValueTask<Guid> HandleAsync(ShipOrderCommand message, CancellationToken cancellationToken)
     {
         var order = await db.Orders.SingleAsync(row => row.Id == message.OrderId, cancellationToken);
         order.Shipped = true;
         await db.SaveChangesAsync(cancellationToken);
+        await signals.HoldIfAskedAsync(order.Id, cancellationToken);
         job.SetResult($"/api/orders/{order.Id}");
         return order.Id;
     }
@@ -170,25 +210,35 @@ internal sealed class ShipOrderHandler(OrdersDbContext db, IJobContext job) : IH
 
 internal sealed class FlakyHandler(IJobContext job) : IHandler<FlakyCommand, int>
 {
-    public Task<int> HandleAsync(FlakyCommand message, CancellationToken cancellationToken) =>
+    public ValueTask<int> HandleAsync(FlakyCommand message, CancellationToken cancellationToken) =>
         job.Attempt <= message.FailedAttempts
             ? throw new InvalidOperationException($"Attempt {job.Attempt} failed.")
-            : Task.FromResult(job.Attempt);
+            : ValueTask.FromResult(job.Attempt);
 }
 
 internal sealed class StrictHandler : IHandler<StrictCommand, int>
 {
-    public Task<int> HandleAsync(StrictCommand message, CancellationToken cancellationToken) => Task.FromResult(1);
+    public ValueTask<int> HandleAsync(StrictCommand message, CancellationToken cancellationToken) => ValueTask.FromResult(1);
+}
+
+internal sealed class LimitedHandler : IHandler<LimitedCommand, int>
+{
+    public ValueTask<int> HandleAsync(LimitedCommand message, CancellationToken cancellationToken) => throw new OrderLimitReached(message.Limit);
 }
 
 internal sealed class RefusedHandler : IHandler<RefusedCommand, int>
 {
-    public Task<int> HandleAsync(RefusedCommand message, CancellationToken cancellationToken) => throw new OrderRefused();
+    public ValueTask<int> HandleAsync(RefusedCommand message, CancellationToken cancellationToken) => throw new OrderRefused();
+}
+
+internal sealed class StaleHandler : IHandler<StaleCommand, int>
+{
+    public ValueTask<int> HandleAsync(StaleCommand message, CancellationToken cancellationToken) => throw new StaleVersionException(2, 3);
 }
 
 internal sealed class OutageHandler : IHandler<OutageCommand, int>
 {
-    public Task<int> HandleAsync(OutageCommand message, CancellationToken cancellationToken) =>
+    public ValueTask<int> HandleAsync(OutageCommand message, CancellationToken cancellationToken) =>
         throw new DependencyUnavailableException(
             "The carrier's API is down.",
             message.WaitMinutes > 0 ? TimeSpan.FromMinutes(message.WaitMinutes) : null);
@@ -199,9 +249,24 @@ internal sealed class StrictCommandValidator : AbstractValidator<StrictCommand>
     public StrictCommandValidator() => RuleFor(command => command.Reference).NotEmpty();
 }
 
+internal sealed class ImportOrdersCommandValidator : AbstractValidator<ImportOrdersCommand>
+{
+    public ImportOrdersCommandValidator() => RuleFor(command => command.Total).GreaterThan(0);
+}
+
+internal sealed class OrderCanceledValidator : AbstractValidator<OrderCanceled>
+{
+    public OrderCanceledValidator() => RuleFor(canceled => canceled.OrderId).NotEmpty();
+}
+
+internal sealed class RebuildRefundsCommandValidator : AbstractValidator<RebuildRefundsCommand>
+{
+    public RebuildRefundsCommandValidator() => RuleFor(command => command.Id).NotEmpty();
+}
+
 internal sealed class WaitHandler(Signals signals, IJobContext job) : IHandler<WaitCommand, int>
 {
-    public async Task<int> HandleAsync(WaitCommand message, CancellationToken cancellationToken)
+    public async ValueTask<int> HandleAsync(WaitCommand message, CancellationToken cancellationToken)
     {
         await job.ReportProgressAsync(message.Progress, "waiting", cancellationToken);
         var (started, release) = signals.For(message.Key);
@@ -213,7 +278,7 @@ internal sealed class WaitHandler(Signals signals, IJobContext job) : IHandler<W
 
 internal sealed class CancelOrderHandler(OrdersDbContext db, IAggregateTracker tracker) : IHandler<CancelOrderCommand, Guid>
 {
-    public async Task<Guid> HandleAsync(CancelOrderCommand message, CancellationToken cancellationToken)
+    public async ValueTask<Guid> HandleAsync(CancelOrderCommand message, CancellationToken cancellationToken)
     {
         var row = await db.Orders.SingleAsync(order => order.Id == message.OrderId, cancellationToken);
         var order = new Order(row.Id, 1);
@@ -291,12 +356,13 @@ internal sealed class ScoreOrdersHandler(OrdersDbContext db, IScopeConnection co
     }
 }
 
-internal sealed class RefundOnOrderCanceledHandler(BillingDbContext db) : IEventHandler<OrderCanceled>
+internal sealed class RefundOnOrderCanceledHandler(BillingDbContext db, Signals signals) : IEventHandler<OrderCanceled>
 {
     public async Task HandleAsync(OrderCanceled integrationEvent, CancellationToken cancellationToken)
     {
         db.Refunds.Add(new RefundRow { Id = Guid.NewGuid(), OrderId = integrationEvent.OrderId });
         await db.SaveChangesAsync(cancellationToken);
+        await signals.HoldIfAskedAsync(integrationEvent.OrderId, cancellationToken);
     }
 }
 
@@ -324,6 +390,11 @@ internal sealed class MailOnOrderCanceledHandler : IEventHandler<OrderCanceled>
         throw new InvalidOperationException("The mail server is down.");
 }
 
+internal sealed class RefuseOnOrderShippedHandler : IEventHandler<OrderShipped>
+{
+    public Task HandleAsync(OrderShipped integrationEvent, CancellationToken cancellationToken) => throw new OrderRefused();
+}
+
 public sealed class OrdersModule : IModule
 {
     public Type Contract => typeof(OrdersContract);
@@ -331,13 +402,15 @@ public sealed class OrdersModule : IModule
     public void ConfigureServices(IServiceCollection services, IConfiguration configuration)
     {
         services.AddModuleDbContext<OrdersDbContext>("orders");
-        services.AddModuleJobs("Orders", "orders", jobs => jobs
+        services.AddClaudaliskModuleJobs("Orders", "orders", jobs => jobs
             .Lane("slow", 1)
             .Retention(TimeSpan.FromDays(7))
             .Command<ShipOrderCommand>("ship-order")
             .Command<FlakyCommand>("flaky")
             .Command<StrictCommand>("strict")
             .Command<RefusedCommand>("refused")
+            .Command<LimitedCommand>("limited")
+            .Command<StaleCommand>("stale")
             .Command<OutageCommand>("outage")
             .Command<WaitCommand>("wait")
             .Batch<ImportOrdersCommand, ImportCheckpoint, ImportOrdersHandler>("import-orders")
@@ -355,7 +428,7 @@ public sealed class BillingModule : IModule
     public void ConfigureServices(IServiceCollection services, IConfiguration configuration)
     {
         services.AddModuleDbContext<BillingDbContext>("billing");
-        services.AddModuleJobs("Billing", "billing", jobs => jobs
+        services.AddClaudaliskModuleJobs("Billing", "billing", jobs => jobs
             .Lane("refunds", 1)
             .Subscribe<OrderCanceled, RefundOnOrderCanceledHandler>("refund-on-order-canceled", "refunds")
             .Rebuild<RebuildRefundsCommand, OrderCanceled, RebuildRefundsHandler>("rebuild-refunds"));
@@ -371,7 +444,9 @@ public sealed class MailModule : IModule
     public void ConfigureServices(IServiceCollection services, IConfiguration configuration)
     {
         services.AddModuleDbContext<MailDbContext>("mail");
-        services.AddModuleJobs("Mail", "mail", jobs => jobs.Subscribe<OrderCanceled, MailOnOrderCanceledHandler>("mail-on-order-canceled"));
+        services.AddClaudaliskModuleJobs("Mail", "mail", jobs => jobs
+            .Subscribe<OrderCanceled, MailOnOrderCanceledHandler>("mail-on-order-canceled")
+            .Subscribe<OrderShipped, RefuseOnOrderShippedHandler>("refuse-on-order-shipped"));
     }
 }
 
@@ -380,10 +455,10 @@ internal static class TestApp
     public static IServiceCollection AddTestApp(this IServiceCollection services, string connectionString, Action<JobsOptions>? configure = null)
     {
         services.AddLogging();
-        services.AddPersistence(connectionString);
-        services.AddModules(new ConfigurationBuilder().Build(), new OrdersModule(), new BillingModule(), new MailModule());
-        services.AddDispatching();
-        services.AddJobs(options =>
+        services.AddClaudaliskPersistence(connectionString);
+        services.AddClaudaliskModules(new ConfigurationBuilder().Build(), new OrdersModule(), new BillingModule(), new MailModule());
+        services.AddClaudaliskDispatching();
+        services.AddClaudaliskJobs(options =>
         {
             options.WorkersEnabled = false;
             options.RetryBaseDelay = TimeSpan.Zero;
@@ -394,7 +469,7 @@ internal static class TestApp
             services.Configure(configure);
         }
 
-        services.AddPostgreSqlJobs();
+        services.AddClaudaliskPostgreSqlJobs();
         services.AddSingleton<Signals>();
         services.AddSingleton<Computations>();
         return services;

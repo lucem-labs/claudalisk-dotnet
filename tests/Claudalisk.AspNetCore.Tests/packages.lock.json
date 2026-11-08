@@ -150,6 +150,15 @@
           "Microsoft.AspNetCore.OpenApi": "[10.0.14, )"
         }
       },
+      "claudalisk.dispatching": {
+        "type": "Project",
+        "dependencies": {
+          "Claudalisk.Dispatching.Abstractions": "[1.0.0, )",
+          "Claudalisk.Modules": "[1.0.0, )",
+          "Claudalisk.Persistence.Abstractions": "[1.0.0, )",
+          "FluentValidation": "[12.2.0, )"
+        }
+      },
       "claudalisk.dispatching.abstractions": {
         "type": "Project"
       },
@@ -161,6 +170,12 @@
       },
       "claudalisk.persistence.abstractions": {
         "type": "Project"
+      },
+      "FluentValidation": {
+        "type": "CentralTransitive",
+        "requested": "[12.2.0, )",
+        "resolved": "12.2.0",
+        "contentHash": "DR3lFbdnKucaaj1/8zMNOACMz/64igzox1yVZSFVsLxYB5mxAB+wFP1WZ8fjwrZnbU1KA1DoMzHKYKxUfuZ4wQ=="
       },
       "Microsoft.AspNetCore.OpenApi": {
         "type": "CentralTransitive",

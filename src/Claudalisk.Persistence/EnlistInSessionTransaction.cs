@@ -51,20 +51,20 @@ internal sealed class EnlistInSessionTransaction(DbSession session) : SaveChange
         }
 
         ModuleContextGuard.Check(context.GetService<IDbContextOptions>());
-        var current = context.Database.CurrentTransaction?.GetDbTransaction();
         if (session.Transaction is null)
         {
-            if (current is not null && ReferenceEquals(current, session.LastFinishedTransaction))
-            {
-                context.Database.UseTransaction(null);
-            }
-
             return;
         }
 
+        var current = context.Database.CurrentTransaction?.GetDbTransaction();
         if (!ReferenceEquals(current, session.Transaction))
         {
             context.Database.UseTransaction(session.Transaction);
+        }
+
+        if (!session.EnlistedContexts.Contains(context))
+        {
+            session.EnlistedContexts.Add(context);
         }
     }
 

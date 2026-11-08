@@ -1,12 +1,13 @@
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
 namespace Claudalisk.Dispatching;
 
-internal sealed class DispatchingStartupCheck(DispatchRegistry registry) : IHostedService
+internal sealed class DispatchingStartupCheck(IServiceProvider provider) : IHostedService
 {
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        GC.KeepAlive(registry);
+        provider.ValidateDispatching();
         return Task.CompletedTask;
     }
 

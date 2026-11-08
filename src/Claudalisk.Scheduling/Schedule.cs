@@ -1,19 +1,53 @@
 using System.Text.Json;
+using Claudalisk.Jobs;
 using Cronos;
 
 namespace Claudalisk.Scheduling;
 
 internal sealed record Schedule(string Name, CronExpression Cron, TimeZoneInfo TimeZone, SchedulableCommand Command, object Message)
 {
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    public Func<CronExpression, DateTime, TimeZoneInfo, DateTime?> Occurrence { get; init; } =
+        static (cron, after, zone) => cron.GetNextOccurrence(after, zone);
 
     public DateTimeOffset? NextAfter(DateTimeOffset last) =>
-        Cron.GetNextOccurrence(last.UtcDateTime, TimeZone) is { } next ? new DateTimeOffset(next, TimeSpan.Zero) : null;
+        Occurrence(Cron, last.UtcDateTime, TimeZone) is { } next ? new DateTimeOffset(next, TimeSpan.Zero) : null;
 
-    public DateTimeOffset? LatestDue(DateTimeOffset last, DateTimeOffset now) =>
-        Cron.GetOccurrences(last.UtcDateTime, now.UtcDateTime, TimeZone, fromInclusive: false, toInclusive: true)
-            .Select(occurrence => (DateTimeOffset?)new DateTimeOffset(occurrence, TimeSpan.Zero))
-            .LastOrDefault();
+    public DateTimeOffset? LatestDue(DateTimeOffset last, DateTimeOffset now)
+    {
+        if (NextAfter(last) is not { } soonest || soonest > now)
+        {
+            return null;
+        }
+
+        var window = TimeSpan.FromMinutes(1);
+        while (true)
+        {
+            var from = now - window;
+            var exhausted = from <= last;
+            if (exhausted)
+            {
+                from = last;
+            }
+
+            if (NextAfter(from) is { } first && first <= now)
+            {
+                var latest = first;
+                while (NextAfter(latest) is { } following && following <= now)
+                {
+                    latest = following;
+                }
+
+                return latest;
+            }
+
+            if (exhausted)
+            {
+                return null;
+            }
+
+            window *= 2;
+        }
+    }
 
     public static IReadOnlyList<Schedule> From(SchedulingOptions options, SchedulableCommands commands)
     {
@@ -68,7 +102,7 @@ internal sealed record Schedule(string Name, CronExpression Cron, TimeZoneInfo T
             {
                 try
                 {
-                    message = JsonSerializer.Deserialize(string.IsNullOrWhiteSpace(configured.Arguments) ? "{}" : configured.Arguments, command.CommandType, Json);
+                    message = JsonSerializer.Deserialize(string.IsNullOrWhiteSpace(configured.Arguments) ? "{}" : configured.Arguments, command.CommandType, JobQueue.Json);
                 }
                 catch (JsonException exception)
                 {

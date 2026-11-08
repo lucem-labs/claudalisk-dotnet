@@ -7,22 +7,28 @@ public sealed class DatabaseInitializer(IServiceProvider services, IEnumerable<M
 {
     public IReadOnlyList<ModuleDbContextRegistration> Contexts { get; } = registrations.ToArray();
 
-    public async Task MigrateAsync(CancellationToken cancellationToken)
+    public async Task MigrateAsync(CancellationToken cancellationToken = default)
     {
-        await services.GetRequiredService<MigrationHistoryMoves>().MoveAsync(cancellationToken);
-        await services.GetRequiredService<MigrationBaselines>().AdoptAsync(cancellationToken);
+        if (services.GetRequiredService<IScopeConnection>().Transaction is not null)
+        {
+            throw new InvalidOperationException(
+                "DatabaseInitializer.MigrateAsync cannot run inside a unit of work, because migrations manage their own transactions. Call it outside IUnitOfWork.RunAsync.");
+        }
+
+        await services.GetRequiredService<MigrationHistoryMoves>().MoveAsync(cancellationToken).ConfigureAwait(false);
+        await services.GetRequiredService<MigrationBaselines>().AdoptAsync(cancellationToken).ConfigureAwait(false);
         foreach (var registration in Contexts)
         {
-            await Context(registration).Database.MigrateAsync(cancellationToken);
+            await Context(registration).Database.MigrateAsync(cancellationToken).ConfigureAwait(false);
         }
     }
 
-    public async Task<IReadOnlyList<string>> GetPendingMigrationsAsync(CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<string>> GetPendingMigrationsAsync(CancellationToken cancellationToken = default)
     {
         var pending = new List<string>();
         foreach (var registration in Contexts)
         {
-            var migrations = await Context(registration).Database.GetPendingMigrationsAsync(cancellationToken);
+            var migrations = await Context(registration).Database.GetPendingMigrationsAsync(cancellationToken).ConfigureAwait(false);
             pending.AddRange(migrations.Select(migration => $"{registration.Schema}: {migration}"));
         }
 

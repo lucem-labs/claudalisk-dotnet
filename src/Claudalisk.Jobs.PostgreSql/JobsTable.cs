@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace Claudalisk.Jobs.PostgreSql;
@@ -43,6 +44,64 @@ public static partial class JobsTable
         $"CREATE INDEX ix_jobs_finished ON {Quote(schema)}.jobs (finished_at) WHERE status IN ('succeeded', 'failed', 'canceled');";
 
     public static string DropPruneIndexSql(string schema) => $"DROP INDEX {Quote(schema)}.ix_jobs_finished;";
+
+    public static string CreateRunningIndexSql(string schema) =>
+        $"CREATE INDEX ix_jobs_running ON {Quote(schema)}.jobs (heartbeat_at) WHERE status = 'running';";
+
+    public static string DropRunningIndexSql(string schema) => $"DROP INDEX {Quote(schema)}.ix_jobs_running;";
+
+    public static string CreateClaimIndexSql(string schema)
+    {
+        var s = Quote(schema);
+        return $"""
+            CREATE INDEX ix_jobs_claim_queued ON {s}.jobs (lane, not_before, created_at) WHERE status = 'queued';
+            DROP INDEX {s}.ix_jobs_claim;
+            """;
+    }
+
+    public static string DropClaimIndexSql(string schema)
+    {
+        var s = Quote(schema);
+        return $"""
+            CREATE INDEX ix_jobs_claim ON {s}.jobs (lane, status, not_before);
+            DROP INDEX {s}.ix_jobs_claim_queued;
+            """;
+    }
+
+    public static string CreateDedupeIndexSql(string schema)
+    {
+        var s = Quote(schema);
+        return $"""
+            UPDATE {s}.jobs
+            SET status = 'canceled', finished_at = now(), last_error = '{SupersededLiteral}'::jsonb
+            WHERE id IN (
+                SELECT id FROM (
+                    SELECT id, row_number() OVER (PARTITION BY kind, dedupe_key ORDER BY created_at DESC, id DESC) AS rank
+                    FROM {s}.jobs
+                    WHERE dedupe_key IS NOT NULL AND status = 'queued'
+                ) AS queued
+                WHERE rank > 1
+            );
+            DROP INDEX {s}.ix_jobs_dedupe;
+            CREATE UNIQUE INDEX ux_jobs_dedupe ON {s}.jobs (kind, dedupe_key) WHERE dedupe_key IS NOT NULL AND status = 'queued';
+            """;
+    }
+
+    public static string DropDedupeIndexSql(string schema)
+    {
+        var s = Quote(schema);
+        return $"""
+            DROP INDEX {s}.ux_jobs_dedupe;
+            CREATE INDEX ix_jobs_dedupe ON {s}.jobs (dedupe_key) WHERE dedupe_key IS NOT NULL AND status = 'queued';
+            """;
+    }
+
+    internal static string SupersededJson { get; } =
+        JsonSerializer.Serialize(new JobError("/problems/jobs/superseded", "A newer job with the same key replaced this one.", null), JobQueue.Json);
+
+    private static string SupersededLiteral => SupersededJson.Replace("'", "''", StringComparison.Ordinal);
+
+    internal static string DedupeLockKey(JobsModule module, string kind, string dedupeKey) => $"{module.Schema}\n{kind}\n{dedupeKey}";
 
     internal static string Channel(string schema) => $"claudalisk_jobs_{Identifier(schema)}";
 

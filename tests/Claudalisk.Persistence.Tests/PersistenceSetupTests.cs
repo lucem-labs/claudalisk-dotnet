@@ -49,10 +49,10 @@ public sealed class PersistenceSetupTests
     public void RegisteringAModuleContextTwiceRegistersItOnce()
     {
         var services = new ServiceCollection()
-            .AddPersistence("Host=localhost;Database=unused")
+            .AddClaudaliskPersistence("Host=localhost;Database=unused")
             .AddModuleDbContext<OrdersDbContext>(OrdersDbContext.Schema)
             .AddModuleDbContext<OrdersDbContext>(OrdersDbContext.Schema)
-            .AddPersistence("Host=localhost;Database=unused");
+            .AddClaudaliskPersistence("Host=localhost;Database=unused");
 
         Assert.Single(services, descriptor => descriptor.ImplementationInstance is ModuleDbContextRegistration);
         Assert.Single(services, descriptor => descriptor.ServiceType == typeof(OrdersDbContext));
@@ -63,7 +63,7 @@ public sealed class PersistenceSetupTests
     public void TwoModuleContextsCannotShareASchema()
     {
         var services = new ServiceCollection()
-            .AddPersistence("Host=localhost;Database=unused")
+            .AddClaudaliskPersistence("Host=localhost;Database=unused")
             .AddModuleDbContext<OrdersDbContext>(OrdersDbContext.Schema);
 
         var error = Assert.Throws<InvalidOperationException>(() => services.AddModuleDbContext<BillingDbContext>(OrdersDbContext.Schema));
@@ -78,7 +78,7 @@ public sealed class PersistenceSetupTests
     public void AModuleContextCannotBeRegisteredAgainWithAnotherSchema()
     {
         var services = new ServiceCollection()
-            .AddPersistence("Host=localhost;Database=unused")
+            .AddClaudaliskPersistence("Host=localhost;Database=unused")
             .AddModuleDbContext<OrdersDbContext>(OrdersDbContext.Schema);
 
         var error = Assert.Throws<InvalidOperationException>(() => services.AddModuleDbContext<OrdersDbContext>("sales"));
@@ -92,9 +92,9 @@ public sealed class PersistenceSetupTests
     [Fact]
     public void AddPersistenceCannotBeCalledAgainWithAnotherConnectionString()
     {
-        var services = new ServiceCollection().AddPersistence("Host=localhost;Database=first");
+        var services = new ServiceCollection().AddClaudaliskPersistence("Host=localhost;Database=first");
 
-        var error = Assert.Throws<InvalidOperationException>(() => services.AddPersistence("Host=localhost;Database=second"));
+        var error = Assert.Throws<InvalidOperationException>(() => services.AddClaudaliskPersistence("Host=localhost;Database=second"));
 
         Assert.Contains("another connection string", error.Message);
         Assert.Single(services, descriptor => descriptor.ServiceType == typeof(Npgsql.NpgsqlDataSource));
@@ -105,7 +105,7 @@ public sealed class PersistenceSetupTests
     {
         var services = new ServiceCollection()
             .AddDbContext<BillingDbContext>((provider, options) => options
-                .UseModuleSchema(provider, BillingDbContext.Schema)
+                .UseClaudaliskModuleSchema(provider, BillingDbContext.Schema)
                 .EnableServiceProviderCaching(false));
         using var app = services.BuildServiceProvider();
         using var scope = app.CreateScope();
@@ -120,9 +120,9 @@ public sealed class PersistenceSetupTests
     public void APooledModuleContextFailsWithAClearMessage()
     {
         var services = new ServiceCollection()
-            .AddPersistence("Host=localhost;Database=unused")
+            .AddClaudaliskPersistence("Host=localhost;Database=unused")
             .AddDbContextPool<BillingDbContext>((provider, options) => options
-                .UseModuleSchema(provider, BillingDbContext.Schema)
+                .UseClaudaliskModuleSchema(provider, BillingDbContext.Schema)
                 .EnableServiceProviderCaching(false));
         using var app = services.BuildServiceProvider();
         using var scope = app.CreateScope();
@@ -136,9 +136,9 @@ public sealed class PersistenceSetupTests
     public void AModuleContextThatRetriesOnFailureFailsWithAClearMessage()
     {
         var services = new ServiceCollection()
-            .AddPersistence("Host=localhost;Database=unused")
+            .AddClaudaliskPersistence("Host=localhost;Database=unused")
             .AddDbContext<BillingDbContext>((provider, options) => options
-                .UseModuleSchema(provider, BillingDbContext.Schema)
+                .UseClaudaliskModuleSchema(provider, BillingDbContext.Schema)
                 .UseNpgsql(npgsql => npgsql.EnableRetryOnFailure())
                 .EnableServiceProviderCaching(false));
         using var app = services.BuildServiceProvider();
@@ -155,9 +155,9 @@ public sealed class PersistenceSetupTests
         var connectionString = await PostgresServer.CreateMigratedDatabaseAsync();
         BuildPlainBillingContextModel(connectionString);
         var services = new ServiceCollection()
-            .AddPersistence(connectionString)
+            .AddClaudaliskPersistence(connectionString)
             .AddDbContext<BillingDbContext>((provider, options) => options
-                .UseModuleSchema(provider, BillingDbContext.Schema)
+                .UseClaudaliskModuleSchema(provider, BillingDbContext.Schema)
                 .UseNpgsql(npgsql => npgsql.EnableRetryOnFailure()));
         await using var app = services.BuildServiceProvider();
         await using var scope = app.CreateAsyncScope();
@@ -175,8 +175,8 @@ public sealed class PersistenceSetupTests
         var connectionString = await PostgresServer.CreateMigratedDatabaseAsync();
         BuildPlainBillingContextModel(connectionString);
         var services = new ServiceCollection()
-            .AddPersistence(connectionString)
-            .AddDbContextPool<BillingDbContext>((provider, options) => options.UseModuleSchema(provider, BillingDbContext.Schema));
+            .AddClaudaliskPersistence(connectionString)
+            .AddDbContextPool<BillingDbContext>((provider, options) => options.UseClaudaliskModuleSchema(provider, BillingDbContext.Schema));
         await using var app = services.BuildServiceProvider();
         await using var scope = app.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
@@ -194,8 +194,8 @@ public sealed class PersistenceSetupTests
         var connectionString = await PostgresServer.CreateMigratedDatabaseAsync();
         BuildPlainBillingContextModel(connectionString);
         var services = new ServiceCollection()
-            .AddPersistence(connectionString)
-            .AddDbContextPool<BillingDbContext>((provider, options) => options.UseModuleSchema(provider, BillingDbContext.Schema));
+            .AddClaudaliskPersistence(connectionString)
+            .AddDbContextPool<BillingDbContext>((provider, options) => options.UseClaudaliskModuleSchema(provider, BillingDbContext.Schema));
         await using var app = services.BuildServiceProvider();
         await using var scope = app.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
@@ -221,7 +221,7 @@ public sealed class PersistenceSetupTests
     private static void BuildPlainBillingContextModel(string connectionString)
     {
         using var app = new ServiceCollection()
-            .AddPersistence(connectionString)
+            .AddClaudaliskPersistence(connectionString)
             .AddModuleDbContext<BillingDbContext>(BillingDbContext.Schema)
             .BuildServiceProvider();
         using var scope = app.CreateScope();

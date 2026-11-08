@@ -15,7 +15,7 @@ public sealed class RebuildTests
         var first = await CanceledOrderAsync(app);
         var second = await CanceledOrderAsync(app);
         var billing = Registry(app).Find("Billing")!;
-        var running = await app.GetRequiredService<IJobTransport>().ClaimAsync(billing, "refunds", TimeSpan.FromMinutes(2), TestContext.Current.CancellationToken);
+        var running = await app.GetRequiredService<IJobTransport>().ClaimAsync(billing, "refunds", TestContext.Current.CancellationToken);
         var unseen = Guid.NewGuid();
         await PublishAsync(app, new OrderCanceled(unseen));
         await ScalarAsync(app, "UPDATE billing.jobs SET not_before = now() + interval '1 hour' WHERE status = 'queued'");
@@ -34,6 +34,25 @@ public sealed class RebuildTests
         await ScalarAsync(app, "UPDATE billing.jobs SET not_before = now() WHERE status = 'queued'");
         Assert.Equal(1, await Runner(app).RunUntilIdleAsync("Billing", "refunds", TestContext.Current.CancellationToken));
         Assert.Equal(3L, await ScalarAsync(app, "SELECT count(*) FROM billing.refunds"));
+    }
+
+    [Fact(Timeout = 60_000)]
+    public async Task AnEventDeliveryARebuildSettledWhileItsHandlerRanCommitsNoneOfTheHandlersWrites()
+    {
+        await using var app = await PostgresServer.CreateAppAsync();
+        var orderId = await CanceledOrderAsync(app);
+        var held = app.GetRequiredService<Signals>().Hold(orderId);
+        var delivering = Runner(app).RunNextAsync("Billing", "refunds", TestContext.Current.CancellationToken);
+        await held.Started.Task;
+        await EnqueueAsync(app, new RebuildRefundsCommand(Guid.NewGuid()));
+        Assert.True(await Runner(app).RunNextAsync("Billing", "refunds", TestContext.Current.CancellationToken));
+
+        held.Release.SetResult();
+        await delivering;
+
+        Assert.Equal<(Guid, string)>([(orderId, "succeeded")], await DeliveriesAsync(app));
+        Assert.Equal(1L, await ScalarAsync(app, "SELECT count(*) FROM billing.refunds"));
+        Assert.Equal(0L, await ScalarAsync(app, "SELECT count(*) FROM billing.jobs WHERE status = 'failed' OR last_error IS NOT NULL"));
     }
 
     [Fact]
@@ -69,7 +88,7 @@ public sealed class RebuildTests
     [Fact]
     public void ARebuiltEventHasNoOtherSubscriptionInItsModule()
     {
-        var failure = Assert.Throws<InvalidOperationException>(() => new ServiceCollection().AddModuleJobs("Audit", "audit", jobs => jobs
+        var failure = Assert.Throws<InvalidOperationException>(() => new ServiceCollection().AddClaudaliskModuleJobs("Audit", "audit", jobs => jobs
             .Subscribe<OrderCanceled, RefundOnOrderCanceledHandler>("audit-order-canceled")
             .Rebuild<RebuildRefundsCommand, OrderCanceled, RebuildRefundsHandler>("rebuild-audit")
             .Subscribe<OrderCanceled, RefundOnOrderCanceledHandler>("audit-order-canceled")
@@ -92,7 +111,7 @@ public sealed class RebuildTests
     [Fact]
     public void ASubscriptionNeedsALaneThatExists()
     {
-        var failure = Assert.Throws<InvalidOperationException>(() => new ServiceCollection().AddModuleJobs(
+        var failure = Assert.Throws<InvalidOperationException>(() => new ServiceCollection().AddClaudaliskModuleJobs(
             "Audit", "audit", jobs => jobs.Subscribe<OrderCanceled, RefundOnOrderCanceledHandler>("audit-order-canceled", "audit")));
 
         Assert.Contains("no job lane 'audit'", failure.Message, StringComparison.Ordinal);
@@ -101,7 +120,7 @@ public sealed class RebuildTests
     [Fact]
     public void ARebuildNeedsASubscriptionToItsEvent()
     {
-        var failure = Assert.Throws<InvalidOperationException>(() => new ServiceCollection().AddModuleJobs(
+        var failure = Assert.Throws<InvalidOperationException>(() => new ServiceCollection().AddClaudaliskModuleJobs(
             "Audit", "audit", jobs => jobs.Rebuild<RebuildRefundsCommand, OrderCanceled, RebuildRefundsHandler>("rebuild-audit")));
 
         Assert.Contains("needs exactly one subscription", failure.Message, StringComparison.Ordinal);
@@ -110,11 +129,11 @@ public sealed class RebuildTests
     [Fact]
     public void ARebuildLaneKeepsOneWorkerAtMost()
     {
-        var before = Assert.Throws<InvalidOperationException>(() => new ServiceCollection().AddModuleJobs("Audit", "audit", jobs => jobs
+        var before = Assert.Throws<InvalidOperationException>(() => new ServiceCollection().AddClaudaliskModuleJobs("Audit", "audit", jobs => jobs
             .Lane("audit", 2)
             .Subscribe<OrderCanceled, RefundOnOrderCanceledHandler>("audit-order-canceled", "audit")
             .Rebuild<RebuildRefundsCommand, OrderCanceled, RebuildRefundsHandler>("rebuild-audit")));
-        var after = Assert.Throws<InvalidOperationException>(() => new ServiceCollection().AddModuleJobs("Audit", "audit", jobs => jobs
+        var after = Assert.Throws<InvalidOperationException>(() => new ServiceCollection().AddClaudaliskModuleJobs("Audit", "audit", jobs => jobs
             .Lane("audit", 1)
             .Subscribe<OrderCanceled, RefundOnOrderCanceledHandler>("audit-order-canceled", "audit")
             .Rebuild<RebuildRefundsCommand, OrderCanceled, RebuildRefundsHandler>("rebuild-audit")

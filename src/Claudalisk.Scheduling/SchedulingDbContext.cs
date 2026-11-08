@@ -6,7 +6,7 @@ internal sealed class ScheduleRow
 {
     public required string Name { get; set; }
 
-    public DateTimeOffset? LastFiredAt { get; set; }
+    public DateTimeOffset? LastFiredTimestamp { get; set; }
 }
 
 internal sealed class SchedulingDbContext(DbContextOptions<SchedulingDbContext> options) : DbContext(options)

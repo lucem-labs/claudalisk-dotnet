@@ -15,6 +15,8 @@ public sealed class ModuleCatalog
 
     internal IMvcBuilder Mvc { get; }
 
+    internal bool IsRegistering { get; set; }
+
     internal Dictionary<Type, IModule> Registered { get; } = [];
 
     internal void Add(IModule module)

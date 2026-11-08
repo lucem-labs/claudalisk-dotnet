@@ -8,80 +8,105 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Claudalisk.AspNetCore;
 
-internal sealed partial class ProblemDetailsExceptionHandler(IProblemDetailsService problemDetails, ILogger<ProblemDetailsExceptionHandler> logger)
+internal sealed partial class ProblemDetailsExceptionHandler(
+    IProblemDetailsService problemDetails,
+    IOptions<ClaudaliskWebOptions> options,
+    ILogger<ProblemDetailsExceptionHandler> logger)
     : IExceptionHandler
 {
-    internal static readonly TimeSpan DefaultRetryAfter = TimeSpan.FromSeconds(30);
+    private static readonly IReadOnlyDictionary<string, string> NoHeaders = new Dictionary<string, string>();
 
     public async ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
     {
-        var problem = ProblemFor(exception, httpContext.RequestServices.GetService<ModuleCatalog>());
-        if (problem.Status == StatusCodes.Status500InternalServerError)
+        var mapping = ProblemFor(exception, httpContext.RequestServices.GetService<ModuleCatalog>(), options.Value.DefaultRetryAfter, options.Value.ProblemTypeBase);
+        switch (mapping.Problem.Status)
         {
-            LogUnhandled(logger, exception, httpContext.Request.Method, httpContext.Request.Path);
+            case StatusCodes.Status500InternalServerError:
+                LogUnhandled(logger, exception, httpContext.Request.Method, httpContext.Request.Path);
+                break;
+            case StatusCodes.Status503ServiceUnavailable:
+                LogUnavailable(logger, exception, httpContext.Request.Method, httpContext.Request.Path);
+                break;
         }
 
-        if (exception is DependencyUnavailableException unavailable)
+        foreach (var (name, value) in mapping.Headers)
         {
-            httpContext.Response.Headers.RetryAfter = RetryAfterSeconds(unavailable.RetryAfter ?? DefaultRetryAfter);
+            httpContext.Response.Headers[name] = value;
         }
 
-        httpContext.Response.StatusCode = problem.Status!.Value;
+        httpContext.Response.StatusCode = mapping.Problem.Status!.Value;
         return await problemDetails.TryWriteAsync(new ProblemDetailsContext
         {
             HttpContext = httpContext,
-            ProblemDetails = problem,
+            ProblemDetails = mapping.Problem,
             Exception = exception,
-        });
+        }).ConfigureAwait(false);
     }
 
-    internal static ProblemDetails ProblemFor(Exception exception, ModuleCatalog? catalog) => exception switch
+    internal static ProblemMapping ProblemFor(Exception exception, ModuleCatalog? catalog, TimeSpan defaultRetryAfter, Uri? typeBase)
     {
-        DomainException domain => DomainProblem(domain, catalog),
-        MessageValidationException validation => new ValidationProblemDetails(validation.Errors.ToDictionary(error => error.Key, error => error.Value))
+        var mapping = Map(exception, catalog, defaultRetryAfter);
+        mapping.Problem.Type = ProblemTypes.Resolve(mapping.Problem.Type, typeBase);
+        return mapping;
+    }
+
+    private static ProblemMapping Map(Exception exception, ModuleCatalog? catalog, TimeSpan defaultRetryAfter) => exception switch
+    {
+        DomainException domain => Plain(DomainProblem(domain, catalog)),
+        MessageValidationException validation => Plain(new ValidationProblemDetails(validation.Errors.ToDictionary(error => error.Key, error => error.Value))
         {
             Status = StatusCodes.Status400BadRequest,
             Title = "One or more values are not valid.",
-        },
-        ConcurrencyConflictException conflict => new ProblemDetails
+        }),
+        StaleVersionException stale => Plain(new ProblemDetails
         {
             Status = StatusCodes.Status412PreconditionFailed,
             Type = "/problems/precondition-failed",
             Title = "The resource changed since you read it.",
-            Detail = conflict.Message,
-        },
-        PreconditionRequiredException required => new ProblemDetails
+            Detail = stale.Message,
+        }),
+        ConcurrencyConflictException => Plain(new ProblemDetails
+        {
+            Status = StatusCodes.Status409Conflict,
+            Type = "/problems/concurrency-conflict",
+            Title = "Someone else changed this resource at the same time. Try again.",
+        }),
+        PreconditionRequiredException required => Plain(new ProblemDetails
         {
             Status = StatusCodes.Status428PreconditionRequired,
             Type = "/problems/precondition-required",
             Title = "This write needs If-Match.",
             Detail = required.Message,
-        },
-        DependencyUnavailableException => new ProblemDetails
-        {
-            Status = StatusCodes.Status503ServiceUnavailable,
-            Type = "/problems/dependency-unavailable",
-            Title = "A service this request needs is unavailable. Try again later.",
-        },
-        BadHttpRequestException badRequest => new ProblemDetails
+        }),
+        DependencyUnavailableException unavailable => new ProblemMapping(
+            new ProblemDetails
+            {
+                Status = StatusCodes.Status503ServiceUnavailable,
+                Type = "/problems/dependency-unavailable",
+                Title = "A service this request needs is unavailable. Try again later.",
+            },
+            new Dictionary<string, string> { ["Retry-After"] = RetryAfterSeconds(unavailable.RetryAfter ?? defaultRetryAfter) }),
+        BadHttpRequestException badRequest => Plain(new ProblemDetails
         {
             Status = badRequest.StatusCode,
             Title = "The request is not valid.",
             Detail = badRequest.Message,
-        },
-        _ => new ProblemDetails
+        }),
+        _ => Plain(new ProblemDetails
         {
             Status = StatusCodes.Status500InternalServerError,
             Title = "An unexpected error occurred.",
-        },
+        }),
     };
+
+    private static ProblemMapping Plain(ProblemDetails problem) => new(problem, NoHeaders);
 
     private static ProblemDetails DomainProblem(DomainException exception, ModuleCatalog? catalog)
     {
-        var module = ModuleNames.ModuleOf(exception.GetType(), catalog);
         var problem = new ProblemDetails
         {
             Status = exception.Kind switch
@@ -90,9 +115,8 @@ internal sealed partial class ProblemDetailsExceptionHandler(IProblemDetailsServ
                 DomainErrorKind.Forbidden => StatusCodes.Status403Forbidden,
                 _ => StatusCodes.Status409Conflict,
             },
-            Type = module is null ? $"/problems/{exception.Slug}" : $"/problems/{ModuleNames.Kebab(module)}/{exception.Slug}",
+            Type = ProblemTypes.For(exception, catalog),
             Title = exception.Title,
-            Detail = exception.Title,
         };
         foreach (var (key, value) in exception.Extensions)
         {
@@ -107,4 +131,7 @@ internal sealed partial class ProblemDetailsExceptionHandler(IProblemDetailsServ
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Unhandled exception for {Method} {Path}")]
     private static partial void LogUnhandled(ILogger logger, Exception exception, string method, PathString path);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "A dependency was unavailable for {Method} {Path}")]
+    private static partial void LogUnavailable(ILogger logger, Exception exception, string method, PathString path);
 }

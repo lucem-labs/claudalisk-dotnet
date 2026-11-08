@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Claudalisk.AspNetCore\Claudalisk.AspNetCore.csproj" />
+    <ProjectReference Include="..\..\src\Claudalisk.Dispatching\Claudalisk.Dispatching.csproj" />
   </ItemGroup>
 
   <ItemGroup>

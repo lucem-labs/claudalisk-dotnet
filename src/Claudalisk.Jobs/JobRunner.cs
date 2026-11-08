@@ -1,8 +1,10 @@
+using System.Collections.Concurrent;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Claudalisk.Dispatching;
 using Claudalisk.Domain;
+using Claudalisk.Modules;
 using Claudalisk.Persistence;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -15,26 +17,35 @@ public sealed partial class JobRunner
     private static readonly MethodInfo BatchMethod = typeof(JobRunner).GetMethod(nameof(RunBatchesAsync), BindingFlags.NonPublic | BindingFlags.Static)!;
     private static readonly MethodInfo RebuildMethod = typeof(JobRunner).GetMethod(nameof(RebuildAsync), BindingFlags.NonPublic | BindingFlags.Static)!;
     private static readonly MethodInfo EventMethod = typeof(JobRunner).GetMethod(nameof(HandleEventAsync), BindingFlags.NonPublic | BindingFlags.Static)!;
+    private static readonly ConcurrentDictionary<(Type Payload, Type Checkpoint), Func<IServiceProvider, JobKind, JobContext, object, string?, CancellationToken, Task>> Batches = new();
+    private static readonly ConcurrentDictionary<(Type Payload, Type Event), Func<IServiceProvider, JobKind, JobContext, object, CancellationToken, Task>> Rebuilds = new();
+    private static readonly ConcurrentDictionary<Type, Func<object, object, CancellationToken, Task>> Events = new();
 
     private readonly IServiceScopeFactory _scopes;
     private readonly IJobTransport _transport;
     private readonly JobsRegistry _registry;
     private readonly JobsOptions _options;
     private readonly ILogger<JobRunner> _logger;
+    private readonly TimeProvider _time;
+    private readonly ModuleCatalog? _catalog;
 
-    internal JobRunner(IServiceScopeFactory scopes, IJobTransport transport, JobsRegistry registry, IOptions<JobsOptions> options, ILogger<JobRunner> logger)
+    internal JobRunner(
+        IServiceScopeFactory scopes, IJobTransport transport, JobsRegistry registry, IOptions<JobsOptions> options, ILogger<JobRunner> logger, TimeProvider time,
+        ModuleCatalog? catalog)
     {
         _scopes = scopes;
         _transport = transport;
         _registry = registry;
         _options = options.Value;
         _logger = logger;
+        _time = time;
+        _catalog = catalog;
     }
 
     public async Task<int> RunUntilIdleAsync(string module, string lane = JobOptions.DefaultLane, CancellationToken cancellationToken = default)
     {
         var ran = 0;
-        while (await RunNextAsync(module, lane, cancellationToken))
+        while (await RunNextAsync(module, lane, cancellationToken).ConfigureAwait(false))
         {
             ran++;
         }
@@ -45,13 +56,13 @@ public sealed partial class JobRunner
     public async Task<bool> RunNextAsync(string module, string lane = JobOptions.DefaultLane, CancellationToken cancellationToken = default)
     {
         var jobs = _registry.Find(module) ?? throw new InvalidOperationException($"Module '{module}' has no jobs.");
-        var claimed = await _transport.ClaimAsync(jobs, lane, _options.StaleAfter, cancellationToken);
+        var claimed = await _transport.ClaimAsync(jobs, lane, cancellationToken).ConfigureAwait(false);
         if (claimed is null)
         {
             return false;
         }
 
-        await RunAsync(jobs, claimed, cancellationToken);
+        await RunAsync(jobs, claimed, cancellationToken).ConfigureAwait(false);
         return true;
     }
 
@@ -70,70 +81,94 @@ public sealed partial class JobRunner
 
             var payload = JsonSerializer.Deserialize(claimed.Payload, kind.PayloadType, JobQueue.Json)
                 ?? throw new InvalidOperationException($"Job {claimed.Id} has an empty payload.");
-            await using var scope = _scopes.CreateAsyncScope();
+            var scope = _scopes.CreateAsyncScope();
+            await using var scopeDisposal = scope.ConfigureAwait(false);
             var context = scope.ServiceProvider.GetRequiredService<JobContext>();
             context.Start(module, claimed, payload);
             switch (kind.Type)
             {
                 case JobKindType.Command:
-                    await scope.ServiceProvider.GetRequiredService<IDispatcher>().SendAsync(payload, cancel.Token);
+                    var unitOfWork = scope.ServiceProvider.GetService<IUnitOfWork>()
+                        ?? throw new InvalidOperationException(
+                            $"Job kind '{kind.Name}' is not a command that runs in a unit of work; register AddClaudaliskJobs after AddClaudaliskDispatching and AddClaudaliskPersistence.");
+                    var dispatcher = scope.ServiceProvider.GetRequiredService<IDispatcher>();
+                    await unitOfWork.RunAsync(token => dispatcher.SendAsync(payload, token).AsTask(), cancel.Token).ConfigureAwait(false);
                     if (!context.Completed)
                     {
                         throw new InvalidOperationException(
-                            $"Job kind '{kind.Name}' is not a command that runs in a unit of work; register AddJobs after AddDispatching and AddPersistence.");
+                            $"Job kind '{kind.Name}' is not a command that runs in a unit of work; register AddClaudaliskJobs after AddClaudaliskDispatching and AddClaudaliskPersistence.");
                     }
 
                     break;
                 case JobKindType.Batch:
-                    await (Task)BatchMethod.MakeGenericMethod(kind.PayloadType, kind.CheckpointType!)
-                        .Invoke(null, [scope.ServiceProvider, kind, context, payload, claimed.Checkpoint, cancel.Token])!;
+                    var batch = Batches.GetOrAdd((kind.PayloadType, kind.CheckpointType!), key =>
+                        BatchMethod.MakeGenericMethod(key.Payload, key.Checkpoint)
+                            .CreateDelegate<Func<IServiceProvider, JobKind, JobContext, object, string?, CancellationToken, Task>>());
+                    await batch(scope.ServiceProvider, kind, context, payload, claimed.Checkpoint, cancel.Token).ConfigureAwait(false);
                     break;
                 case JobKindType.Rebuild:
-                    await (Task)RebuildMethod.MakeGenericMethod(kind.PayloadType, module.Kinds[kind.EventKind!].PayloadType)
-                        .Invoke(null, [scope.ServiceProvider, kind, context, payload, cancel.Token])!;
+                    var rebuild = Rebuilds.GetOrAdd((kind.PayloadType, module.Kinds[kind.EventKind!].PayloadType), key =>
+                        RebuildMethod.MakeGenericMethod(key.Payload, key.Event)
+                            .CreateDelegate<Func<IServiceProvider, JobKind, JobContext, object, CancellationToken, Task>>());
+                    await rebuild(scope.ServiceProvider, kind, context, payload, cancel.Token).ConfigureAwait(false);
                     break;
                 default:
-                    await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().RunAsync(async token =>
+                    var handle = Events.GetOrAdd(kind.PayloadType, key =>
+                        EventMethod.MakeGenericMethod(key).CreateDelegate<Func<object, object, CancellationToken, Task>>());
+                    await scope.ServiceProvider.GetRequiredService<IOuterPipeline>().RunAsync(payload, MessageKind.Event, async outerToken =>
                     {
-                        await (Task)EventMethod.MakeGenericMethod(kind.PayloadType)
-                            .Invoke(null, [scope.ServiceProvider.GetRequiredService(kind.HandlerType!), payload, token])!;
-                        await scope.ServiceProvider.GetRequiredService<EventPublisher>().PublishTrackedAsync(token);
-                        await scope.ServiceProvider.GetRequiredService<IJobWriter>().CompleteAsync(module, claimed.Id, context.ResultLink, token);
-                    }, cancel.Token);
+                        await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().RunAsync(async token =>
+                        {
+                            await handle(scope.ServiceProvider.GetRequiredService(kind.HandlerType!), payload, token).ConfigureAwait(false);
+                            await scope.ServiceProvider.GetRequiredService<EventPublisher>().PublishTrackedAsync(token).ConfigureAwait(false);
+                            await context.CompleteAsync(scope.ServiceProvider.GetRequiredService<IJobWriter>(), token).ConfigureAwait(false);
+                        }, outerToken).ConfigureAwait(false);
+                        return true;
+                    }, cancel.Token).ConfigureAwait(false);
                     break;
             }
         }
         catch (OperationCanceledException) when (stopping.IsCancellationRequested)
         {
-            await _transport.RequeueAsync(module, claimed.Id, CancellationToken.None);
+            await _transport.RequeueAsync(module, claimed.Id, CancellationToken.None).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancel.IsCancellationRequested)
         {
-            await _transport.MarkCanceledAsync(module, claimed.Id, CancellationToken.None);
+            await _transport.MarkCanceledAsync(module, claimed.Id, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (JobNoLongerRunningException exception)
+        {
+            LogNoLongerRunning(_logger, module.Name, claimed.Id, claimed.Kind, exception.Attempt);
         }
         catch (Exception exception)
         {
-            var error = ErrorFor(module, exception);
-            var retry = exception is not (MessageValidationException or DomainException) && claimed.Attempts < claimed.MaxAttempts;
+            var error = ErrorFor(exception, _catalog);
+            var retry = exception is not (MessageValidationException or DomainException or StaleVersionException) && claimed.Attempts < claimed.MaxAttempts;
             if (error.Type == UnexpectedError)
             {
                 LogJobFailed(_logger, exception, module.Name, claimed.Id, claimed.Kind, claimed.Attempts);
             }
 
-            await _transport.RetryOrFailAsync(module, claimed.Id, error, retry ? RetryDelay(exception, claimed.Attempts) : null, CancellationToken.None);
+            await _transport.RetryOrFailAsync(module, claimed.Id, error, retry ? RetryDelay(exception, claimed.Attempts) : null, CancellationToken.None).ConfigureAwait(false);
         }
         finally
         {
-            await heartbeatStop.CancelAsync();
-            await heartbeat;
-            await cancelWatch;
+            await heartbeatStop.CancelAsync().ConfigureAwait(false);
+            await heartbeat.ConfigureAwait(false);
+            await cancelWatch.ConfigureAwait(false);
         }
+    }
+
+    public async Task SweepStaleAsync(string module, CancellationToken cancellationToken = default)
+    {
+        var jobs = _registry.Find(module) ?? throw new InvalidOperationException($"Module '{module}' has no jobs.");
+        await _transport.SweepStaleAsync(jobs, _options.StaleAfter, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<int> PruneAsync(string module, CancellationToken cancellationToken = default)
     {
         var jobs = _registry.Find(module) ?? throw new InvalidOperationException($"Module '{module}' has no jobs.");
-        return await _transport.DeleteFinishedBeforeAsync(jobs, jobs.Retention ?? _options.FinishedJobRetention, cancellationToken);
+        return await _transport.DeleteFinishedBeforeAsync(jobs, jobs.Retention ?? _options.FinishedJobRetention, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task RunBatchesAsync<TCommand, TCheckpoint>(
@@ -148,43 +183,52 @@ public sealed partial class JobRunner
         var tracker = scope.GetRequiredService<AggregateTracker>();
         var command = (TCommand)payload;
         var checkpoint = stored is null ? null : JsonSerializer.Deserialize<TCheckpoint>(stored, JobQueue.Json);
-        while (true)
+        await scope.GetRequiredService<IOuterPipeline>().RunAsync(command, MessageKind.Command, async outerToken =>
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            BatchStep<TCheckpoint> step;
-            if (handler.WritesNothing(command, checkpoint))
+            await LoopAsync(outerToken).ConfigureAwait(false);
+            return true;
+        }, cancellationToken).ConfigureAwait(false);
+
+        async Task LoopAsync(CancellationToken loopToken)
+        {
+            while (true)
             {
-                var computed = await handler.RunBatchAsync(command, checkpoint, cancellationToken);
-                if (tracker.HasTracked)
+                loopToken.ThrowIfCancellationRequested();
+                BatchStep<TCheckpoint> step;
+                if (handler.WritesNothing(command, checkpoint))
                 {
-                    throw new InvalidOperationException(
-                        $"Job kind '{kind.Name}' changed an aggregate in a batch that writes nothing; write it in the next batch.");
+                    var computed = await handler.RunBatchAsync(command, checkpoint, loopToken).ConfigureAwait(false);
+                    if (tracker.HasTracked)
+                    {
+                        throw new InvalidOperationException(
+                            $"Job kind '{kind.Name}' changed an aggregate in a batch that writes nothing; write it in the next batch.");
+                    }
+
+                    step = await unitOfWork.RunAsync(token => SaveAsync(computed, token), loopToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    step = await unitOfWork.RunAsync(
+                        async token => await SaveAsync(await handler.RunBatchAsync(command, checkpoint, token).ConfigureAwait(false), token).ConfigureAwait(false),
+                        loopToken).ConfigureAwait(false);
                 }
 
-                step = await unitOfWork.RunAsync(token => SaveAsync(computed, token), cancellationToken);
-            }
-            else
-            {
-                step = await unitOfWork.RunAsync(
-                    async token => await SaveAsync(await handler.RunBatchAsync(command, checkpoint, token), token),
-                    cancellationToken);
-            }
+                if (step.Done)
+                {
+                    return;
+                }
 
-            if (step.Done)
-            {
-                return;
+                checkpoint = step.Checkpoint;
             }
-
-            checkpoint = step.Checkpoint;
         }
 
         async Task<BatchStep<TCheckpoint>> SaveAsync(BatchStep<TCheckpoint> next, CancellationToken token)
         {
-            await writer.SaveCheckpointAsync(context.JobsModule, context.JobId, JsonSerializer.Serialize(next.Checkpoint, JobQueue.Json), next.Progress, token);
-            await publisher.PublishTrackedAsync(token);
+            await writer.SaveCheckpointAsync(context.JobsModule, context.JobId, JsonSerializer.Serialize(next.Checkpoint, JobQueue.Json), next.Progress, token).ConfigureAwait(false);
+            await publisher.PublishTrackedAsync(token).ConfigureAwait(false);
             if (next.Done)
             {
-                await writer.CompleteAsync(context.JobsModule, context.JobId, context.ResultLink, token);
+                await context.CompleteAsync(writer, token).ConfigureAwait(false);
             }
 
             return next;
@@ -198,18 +242,23 @@ public sealed partial class JobRunner
         var handler = (IRebuildJobHandler<TCommand, TEvent>)scope.GetRequiredService(kind.HandlerType!);
         var writer = scope.GetRequiredService<IJobWriter>();
         var publisher = scope.GetRequiredService<EventPublisher>();
-        await scope.GetRequiredService<IUnitOfWork>().RunAsync(async token =>
+        await scope.GetRequiredService<IOuterPipeline>().RunAsync((TCommand)payload, MessageKind.Command, async outerToken =>
         {
-            var includes = await handler.RebuildAsync((TCommand)payload, token);
-            var deliveries = await writer.LockActiveAsync(context.JobsModule, kind.EventKind!, token);
-            var included = deliveries
-                .Where(delivery => includes(JsonSerializer.Deserialize<TEvent>(delivery.Payload, JobQueue.Json)!))
-                .Select(delivery => delivery.Id)
-                .ToArray();
-            await writer.MarkSucceededAsync(context.JobsModule, kind.EventKind!, included, token);
-            await publisher.PublishTrackedAsync(token);
-            await writer.CompleteAsync(context.JobsModule, context.JobId, context.ResultLink, token);
-        }, cancellationToken);
+            await scope.GetRequiredService<IUnitOfWork>().RunAsync(async token =>
+            {
+                var includes = await handler.RebuildAsync((TCommand)payload, token).ConfigureAwait(false);
+                var deliveries = await writer.LockActiveAsync(context.JobsModule, kind.EventKind!, token).ConfigureAwait(false);
+                var included = deliveries
+                    .Where(delivery => includes(JsonSerializer.Deserialize<TEvent>(delivery.Payload, JobQueue.Json)
+                        ?? throw new InvalidOperationException($"Delivery {delivery.Id} has an empty payload.")))
+                    .Select(delivery => delivery.Id)
+                    .ToArray();
+                await writer.MarkSucceededAsync(context.JobsModule, kind.EventKind!, included, token).ConfigureAwait(false);
+                await publisher.PublishTrackedAsync(token).ConfigureAwait(false);
+                await context.CompleteAsync(writer, token).ConfigureAwait(false);
+            }, outerToken).ConfigureAwait(false);
+            return true;
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     private static Task HandleEventAsync<TEvent>(object handler, object payload, CancellationToken cancellationToken) =>
@@ -217,38 +266,41 @@ public sealed partial class JobRunner
 
     private async Task BeatAsync(JobsModule module, Guid id, CancellationTokenSource cancel, CancellationToken stop)
     {
-        using var timer = new PeriodicTimer(_options.HeartbeatInterval);
+        using var timer = new PeriodicTimer(_options.HeartbeatInterval, _time);
         try
         {
-            while (await timer.WaitForNextTickAsync(stop))
+            while (await timer.WaitForNextTickAsync(stop).ConfigureAwait(false))
             {
-                if (await _transport.HeartbeatAsync(module, id, stop))
+                try
                 {
-                    await cancel.CancelAsync();
+                    if (await _transport.HeartbeatAsync(module, id, stop).ConfigureAwait(false))
+                    {
+                        await cancel.CancelAsync().ConfigureAwait(false);
+                    }
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException || !stop.IsCancellationRequested)
+                {
+                    LogHeartbeatFailed(_logger, exception, module.Name, id);
                 }
             }
         }
         catch (OperationCanceledException) when (stop.IsCancellationRequested)
         {
         }
-        catch (Exception exception)
-        {
-            LogHeartbeatFailed(_logger, exception, module.Name, id);
-        }
     }
 
     private async Task WatchForCancelAsync(JobsModule module, Guid id, CancellationTokenSource cancel, CancellationToken stop)
     {
-        using var timer = new PeriodicTimer(_options.CancelCheckInterval);
+        using var timer = new PeriodicTimer(_options.CancelCheckInterval, _time);
         try
         {
-            while (await timer.WaitForNextTickAsync(stop))
+            while (await timer.WaitForNextTickAsync(stop).ConfigureAwait(false))
             {
                 try
                 {
-                    if (await _transport.IsCancelRequestedAsync(module, id, stop))
+                    if (await _transport.IsCancelRequestedAsync(module, id, stop).ConfigureAwait(false))
                     {
-                        await cancel.CancelAsync();
+                        await cancel.CancelAsync().ConfigureAwait(false);
                         return;
                     }
                 }
@@ -263,10 +315,16 @@ public sealed partial class JobRunner
         }
     }
 
-    private TimeSpan RetryDelay(Exception exception, int attempt)
+    internal TimeSpan RetryDelay(Exception exception, int attempt)
     {
         var backoff = Backoff(attempt);
-        return exception is DependencyUnavailableException { RetryAfter: { } wait } && wait > backoff ? wait : backoff;
+        if (exception is DependencyUnavailableException { RetryAfter: { } wait })
+        {
+            var asked = wait > _options.RetryAfterMaxDelay ? _options.RetryAfterMaxDelay : wait;
+            return asked > backoff ? asked : backoff;
+        }
+
+        return backoff;
     }
 
     private TimeSpan Backoff(int attempt)
@@ -279,16 +337,20 @@ public sealed partial class JobRunner
 
     private const string UnexpectedError = "/problems/jobs/failed";
 
-    internal static JobError ErrorFor(JobsModule module, Exception exception) => exception switch
+    internal static JobError ErrorFor(Exception exception, ModuleCatalog? catalog) => exception switch
     {
-        DomainException domain => new JobError($"/problems/{Claudalisk.AspNetCore.NameSegments.Kebab(module.Name)}/{domain.Slug}", domain.Title, domain.Title),
+        DomainException domain => new JobError(Claudalisk.AspNetCore.ProblemTypes.For(domain, catalog), domain.Title, domain.Title, domain.Extensions.Count == 0 ? null : domain.Extensions),
         MessageValidationException validation => new JobError("/problems/jobs/invalid", "The job's input is not valid.", validation.Message),
+        StaleVersionException => new JobError("/problems/precondition-failed", "The resource changed since the job read it.", null),
         DependencyUnavailableException => new JobError("/problems/dependency-unavailable", "A service this job needs is unavailable.", null),
         _ => new JobError(UnexpectedError, "The job failed.", null),
     };
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Job {Module}/{Id} ({Kind}) failed on attempt {Attempt}")]
     private static partial void LogJobFailed(ILogger logger, Exception exception, string module, Guid id, string kind, int attempt);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Job {Module}/{Id} ({Kind}) attempt {Attempt} was settled or taken over while it ran; its writes were rolled back and the row is left as it is")]
+    private static partial void LogNoLongerRunning(ILogger logger, string module, Guid id, string kind, int attempt);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "The heartbeat of job {Module}/{Id} failed")]
     private static partial void LogHeartbeatFailed(ILogger logger, Exception exception, string module, Guid id);

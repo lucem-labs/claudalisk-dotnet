@@ -6,7 +6,7 @@ namespace Claudalisk.Modules;
 
 public static class ModuleServiceCollectionExtensions
 {
-    public static IMvcBuilder AddModules(this IServiceCollection services, IConfiguration configuration, params IModule[] modules)
+    public static IMvcBuilder AddClaudaliskModules(this IServiceCollection services, IConfiguration configuration, params IModule[] modules)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
@@ -17,6 +17,11 @@ public static class ModuleServiceCollectionExtensions
             .Select(descriptor => descriptor.ImplementationInstance)
             .OfType<ModuleCatalog>()
             .SingleOrDefault();
+        if (catalog is { IsRegistering: true })
+        {
+            throw new InvalidOperationException("AddClaudaliskModules cannot be called from a module's ConfigureServices while modules are being registered.");
+        }
+
         var available = catalog is null ? new Dictionary<Type, IModule>() : new Dictionary<Type, IModule>(catalog.Registered);
         foreach (var module in modules)
         {
@@ -32,15 +37,23 @@ public static class ModuleServiceCollectionExtensions
             services.AddSingleton(catalog);
         }
 
-        foreach (var module in ordered)
+        catalog.IsRegistering = true;
+        try
         {
-            module.ConfigureServices(services, configuration);
-            var assembly = module.GetType().Assembly;
-            if (!catalog.Mvc.PartManager.ApplicationParts.OfType<AssemblyPart>().Any(part => part.Assembly == assembly))
+            foreach (var module in ordered)
             {
-                catalog.Mvc.AddApplicationPart(assembly);
+                module.ConfigureServices(services, configuration);
+                var assembly = module.GetType().Assembly;
+                if (!catalog.Mvc.PartManager.ApplicationParts.OfType<AssemblyPart>().Any(part => part.Assembly == assembly))
+                {
+                    catalog.Mvc.AddApplicationPart(assembly);
+                }
+                catalog.Add(module);
             }
-            catalog.Add(module);
+        }
+        finally
+        {
+            catalog.IsRegistering = false;
         }
 
         return catalog.Mvc;

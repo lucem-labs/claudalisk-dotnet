@@ -1,7 +1,6 @@
 using System.Text;
-using Claudalisk.Modules;
 
-namespace Claudalisk.AspNetCore;
+namespace Claudalisk.Modules;
 
 internal static class ModuleNames
 {

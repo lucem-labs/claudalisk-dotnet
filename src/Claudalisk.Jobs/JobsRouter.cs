@@ -8,7 +8,7 @@ namespace Claudalisk.Jobs;
 
 public sealed record JobProgressResponse(double? Fraction, string? Step);
 
-public sealed record JobErrorResponse(string Type, string Title, string? Detail);
+public sealed record JobErrorResponse(string Type, string Title, string? Detail, IReadOnlyDictionary<string, object?>? Extensions = null);
 
 public sealed record JobResponse(
     Guid Id,
@@ -29,12 +29,12 @@ public static class JobsRouter
 {
     public const string Tag = "Jobs";
 
-    public static IEndpointRouteBuilder MapJobsRouter(this IEndpointRouteBuilder endpoints)
+    public static IEndpointRouteBuilder MapClaudaliskJobsRouter(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
         var jobs = endpoints.MapGroup("/api/jobs/{module}/{id:guid}").WithTags(Tag);
         jobs.MapGet("", async (string module, Guid id, JobsRegistry registry, IJobTransport transport, CancellationToken cancellationToken) =>
-            registry.Find(module) is { } jobsModule && await transport.GetAsync(jobsModule, id, cancellationToken) is { } job
+            registry.Find(module) is { } jobsModule && await transport.GetAsync(jobsModule, id, cancellationToken).ConfigureAwait(false) is { } job
                 ? Results.Ok(Represent(jobsModule, job))
                 : NotFound(module, id))
             .WithName("GetJob")
@@ -42,7 +42,7 @@ public static class JobsRouter
             .ProducesProblem(StatusCodes.Status404NotFound);
         jobs.MapPost("/cancel", async (string module, Guid id, JobsRegistry registry, IJobTransport transport, CancellationToken cancellationToken) =>
         {
-            if (registry.Find(module) is not { } jobsModule || await transport.GetAsync(jobsModule, id, cancellationToken) is not { } job)
+            if (registry.Find(module) is not { } jobsModule || await transport.GetAsync(jobsModule, id, cancellationToken).ConfigureAwait(false) is not { } job)
             {
                 return NotFound(module, id);
             }
@@ -56,7 +56,7 @@ public static class JobsRouter
                     statusCode: StatusCodes.Status409Conflict);
             }
 
-            var canceled = await transport.RequestCancelAsync(jobsModule, id, cancellationToken) ?? job;
+            var canceled = await transport.RequestCancelAsync(jobsModule, id, cancellationToken).ConfigureAwait(false) ?? job;
             return Results.Ok(Represent(jobsModule, canceled));
         })
             .WithName("CancelJob")
@@ -68,6 +68,8 @@ public static class JobsRouter
 
     public static JobResponse Represent(JobsModule module, JobRecord job)
     {
+        ArgumentNullException.ThrowIfNull(module);
+        ArgumentNullException.ThrowIfNull(job);
         var self = $"/api/jobs/{module.Segment}/{job.Id}";
         return new JobResponse(
             job.Id,
@@ -77,7 +79,7 @@ public static class JobsRouter
             job.Attempts,
             job.MaxAttempts,
             new JobProgressResponse(job.ProgressFraction, job.ProgressStep),
-            job.LastError is { } error ? new JobErrorResponse(error.Type, error.Title, error.Detail) : null,
+            job.LastError is { } error ? new JobErrorResponse(error.Type, error.Title, error.Detail, error.Extensions) : null,
             job.CreatedAt,
             job.StartedAt,
             job.FinishedAt,

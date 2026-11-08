@@ -8,15 +8,30 @@ namespace Claudalisk.Persistence;
 
 public sealed record MovedMigrationHistory(string From, string To);
 
-public sealed class MigrationHistoryMoveException(string message) : InvalidOperationException(message);
+public sealed class MigrationHistoryMoveException : InvalidOperationException
+{
+    public MigrationHistoryMoveException()
+    {
+    }
 
-public sealed partial class MigrationHistoryMoves(IServiceProvider services)
+    public MigrationHistoryMoveException(string message)
+        : base(message)
+    {
+    }
+
+    public MigrationHistoryMoveException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+    }
+}
+
+internal sealed partial class MigrationHistoryMoves(IServiceProvider services)
 {
     private readonly ILogger logger = services.GetService<ILogger<MigrationHistoryMoves>>() ?? NullLogger<MigrationHistoryMoves>.Instance;
 
     private readonly MovedMigrationHistory[] moves = services.GetServices<MovedMigrationHistory>().ToArray();
 
-    public async Task MoveAsync(CancellationToken cancellationToken)
+    public async Task MoveAsync(CancellationToken cancellationToken = default)
     {
         if (moves.Length == 0)
         {
@@ -28,9 +43,10 @@ public sealed partial class MigrationHistoryMoves(IServiceProvider services)
         {
             foreach (var move in moves)
             {
-                await using var context = new DbContext(new DbContextOptionsBuilder<DbContext>().UseModuleSchema(services, move.To).Options);
-                var from = await HistoryExistsAsync(context, move.From, token);
-                var to = await HistoryExistsAsync(context, move.To, token);
+                var context = new DbContext(new DbContextOptionsBuilder<DbContext>().UseClaudaliskModuleSchema(services, move.To).Options);
+                await using var contextDisposal = context.ConfigureAwait(false);
+                var from = await HistoryExistsAsync(context, move.From, token).ConfigureAwait(false);
+                var to = await HistoryExistsAsync(context, move.To, token).ConfigureAwait(false);
                 if (from && to)
                 {
                     throw new MigrationHistoryMoveException(
@@ -43,10 +59,10 @@ public sealed partial class MigrationHistoryMoves(IServiceProvider services)
                 }
 
                 var sql = MoveSql(move);
-                await context.Database.ExecuteSqlRawAsync(sql, token);
+                await context.Database.ExecuteSqlRawAsync(sql, token).ConfigureAwait(false);
                 moved.Add(move);
             }
-        }, cancellationToken);
+        }, cancellationToken).ConfigureAwait(false);
 
         foreach (var move in moved)
         {
@@ -74,6 +90,6 @@ public sealed partial class MigrationHistoryMoves(IServiceProvider services)
             ? $"\"{schema}\""
             : throw new ArgumentException($"A schema is a lower-case identifier; got '{schema}'.", nameof(schema));
 
-    [GeneratedRegex("^[a-z_][a-z0-9_]*$")]
+    [GeneratedRegex(@"^[a-z_][a-z0-9_]*\z")]
     private static partial Regex SchemaPattern();
 }
