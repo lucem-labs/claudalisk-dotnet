@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <IsPackable>true</IsPackable>
+    <IsAotCompatible>true</IsAotCompatible>
     <PackageId>Claudalisk.Persistence.Abstractions</PackageId>
     <Description>The unit of work and the concurrency conflict, without EF Core or Npgsql types.</Description>
     <PackageTags>claudalisk;persistence;unit-of-work;modular-monolith</PackageTags>

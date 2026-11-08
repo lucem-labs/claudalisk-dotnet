@@ -26,3 +26,7 @@ public sealed class ShipOrderHandler : IHandler<ShipOrderCommand, ShippedOrder>
 - `MessageContext`: the message, its type, its result type and its `MessageKind`.
 - `MessageValidationException`: carries `MessageType` and `Errors`, a map from member name to messages. The web package maps it to 400.
 - `JobReference`: module, job id and URL of a queued job.
+
+## Trimming and AOT
+
+This package uses no reflection and is trimmable and AOT-compatible.

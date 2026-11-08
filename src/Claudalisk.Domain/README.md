@@ -35,3 +35,7 @@ The constructor throws `ArgumentException` for a bad slug, and for an extension 
 ## Unavailable dependencies
 
 `DependencyUnavailableException` says that something the request needs is down. It is not a domain rule. `RetryAfter` is an optional wait and cannot be negative. The web package answers 503 with a `Retry-After` header, and the jobs library retries the job, waiting at least `RetryAfter`.
+
+## Trimming and AOT
+
+This package uses no reflection and is trimmable and AOT-compatible.

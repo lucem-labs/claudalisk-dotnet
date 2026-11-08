@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <IsPackable>true</IsPackable>
+    <IsAotCompatible>true</IsAotCompatible>
     <PackageId>Claudalisk.Domain</PackageId>
     <Description>Domain building blocks for claudalisk apps: DomainException, DependencyUnavailableException, domain events and the aggregate base with its version.</Description>
     <PackageTags>claudalisk;domain;ddd;aggregate</PackageTags>
