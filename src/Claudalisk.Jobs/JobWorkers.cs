@@ -14,9 +14,8 @@ internal sealed partial class JobWorkers(JobRunner runner, IJobTransport transpo
             return Task.CompletedTask;
         }
 
-        var workers = registry.Modules
-            .SelectMany(module => module.Lanes.SelectMany(lane => Enumerable.Range(0, lane.Value).Select(_ => WorkAsync(module, lane.Key, stoppingToken))))
-            .Concat(registry.Modules.Select(module => PruneAsync(module, stoppingToken)))
+        var workers = registry.Modules.Select(module => PruneAsync(module, stoppingToken))
+            .Concat(registry.Modules.SelectMany(module => module.Lanes.SelectMany(lane => Enumerable.Range(0, lane.Value).Select(_ => WorkAsync(module, lane.Key, stoppingToken)))))
             .ToArray();
         return Task.WhenAll(workers);
     }
