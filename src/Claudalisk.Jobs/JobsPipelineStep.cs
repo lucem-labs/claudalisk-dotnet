@@ -6,6 +6,8 @@ internal sealed class JobsPipelineStep(JobContext job, EventPublisher publisher,
 {
     private int _depth;
 
+    public int Order => PipelineOrder.UnitOfWork + 1000;
+
     public async Task<object?> InvokeAsync(MessageContext context, Func<CancellationToken, Task<object?>> next, CancellationToken cancellationToken)
     {
         if (context.Kind != MessageKind.Command)

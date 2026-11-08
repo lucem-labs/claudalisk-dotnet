@@ -4,4 +4,5 @@ public enum MessageKind
 {
     Command,
     Query,
+    Event,
 }

@@ -76,7 +76,11 @@ public sealed partial class JobRunner
             switch (kind.Type)
             {
                 case JobKindType.Command:
-                    await scope.ServiceProvider.GetRequiredService<IDispatcher>().SendAsync(payload, cancel.Token);
+                    var unitOfWork = scope.ServiceProvider.GetService<IUnitOfWork>()
+                        ?? throw new InvalidOperationException(
+                            $"Job kind '{kind.Name}' is not a command that runs in a unit of work; register AddJobs after AddDispatching and AddPersistence.");
+                    var dispatcher = scope.ServiceProvider.GetRequiredService<IDispatcher>();
+                    await unitOfWork.RunAsync(token => dispatcher.SendAsync(payload, token), cancel.Token);
                     if (!context.Completed)
                     {
                         throw new InvalidOperationException(

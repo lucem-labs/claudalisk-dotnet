@@ -61,6 +61,8 @@ public sealed class SendLog
 
 internal sealed class RecordingStep(SendLog log) : IPipelineStep
 {
+    public int Order => PipelineOrder.UnitOfWork + 100;
+
     public Task<object?> InvokeAsync(MessageContext context, Func<CancellationToken, Task<object?>> next, CancellationToken cancellationToken)
     {
         log.Sends.Add(context.MessageType.Name);
@@ -179,6 +181,142 @@ internal static class TestApp
         services.AddDispatching();
         services.AddSingleton<SendLog>();
         services.AddScoped<IPipelineStep, RecordingStep>();
+        services.AddSingleton<AttemptLog>();
+        services.AddSingleton<Gate>();
+        services.AddSingleton<StepTrace>();
         return services;
     }
+}
+
+public sealed class AttemptLog
+{
+    public List<Guid> ScopeIds { get; } = [];
+}
+
+public sealed class Gate
+{
+    public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+}
+
+public sealed class StepTrace
+{
+    public List<(string Step, bool UnitOfWorkActive)> Entries { get; } = [];
+}
+
+internal sealed class FlakyHandler(OrdersDbContext db, AttemptLog log, ScopeMarker marker) : IHandler<FlakyCommand, Guid>
+{
+    public async Task<Guid> HandleAsync(FlakyCommand message, CancellationToken cancellationToken)
+    {
+        log.ScopeIds.Add(marker.Id);
+        db.Orders.Add(new Order { Id = Guid.NewGuid(), Reference = "flaky" });
+        await db.SaveChangesAsync(cancellationToken);
+        if (log.ScopeIds.Count <= message.FailAttempts)
+        {
+            throw new ConcurrencyConflictException("Lost the race.");
+        }
+
+        return message.Id;
+    }
+}
+
+internal sealed class RelayHandler(IDispatcher dispatcher) : IHandler<RelayCommand, Guid>
+{
+    public Task<Guid> HandleAsync(RelayCommand message, CancellationToken cancellationToken) =>
+        dispatcher.SendAsync<Guid>(new FlakyCommand(message.Id, int.MaxValue), cancellationToken);
+}
+
+internal sealed class ConflictingHandler(AttemptLog log, ScopeMarker marker) : IHandler<ConflictingQuery, int>
+{
+    public Task<int> HandleAsync(ConflictingQuery message, CancellationToken cancellationToken)
+    {
+        log.ScopeIds.Add(marker.Id);
+        throw new ConcurrencyConflictException("Lost the race.");
+    }
+}
+
+internal sealed class GateHandler(Gate gate) : IHandler<GateQuery, int>
+{
+    public async Task<int> HandleAsync(GateQuery message, CancellationToken cancellationToken)
+    {
+        gate.Entered.TrySetResult();
+        await gate.Release.Task.WaitAsync(cancellationToken);
+        return 1;
+    }
+}
+
+internal sealed class FanOutHandler(IDispatcher dispatcher, Gate gate) : IHandler<FanOutQuery, int>
+{
+    public async Task<int> HandleAsync(FanOutQuery message, CancellationToken cancellationToken)
+    {
+        var first = dispatcher.SendAsync<int>(new GateQuery(), cancellationToken);
+        await gate.Entered.Task.WaitAsync(cancellationToken);
+        var second = dispatcher.SendAsync<int>(new CountOrdersQuery(), cancellationToken);
+        gate.Release.TrySetResult();
+        return (await Task.WhenAll(first, second)).Sum();
+    }
+}
+
+internal sealed class StructHandler : IHandler<StructCommand, Guid>
+{
+    public Task<Guid> HandleAsync(StructCommand message, CancellationToken cancellationToken) => Task.FromResult(message.Id);
+}
+
+internal sealed class NestedHandler : IHandler<NestedMessages.NestedQuery, int>
+{
+    public Task<int> HandleAsync(NestedMessages.NestedQuery message, CancellationToken cancellationToken) => Task.FromResult(7);
+}
+
+internal sealed class DerivedHandler : IHandler<DerivedCommand, Guid>
+{
+    public Task<Guid> HandleAsync(DerivedCommand message, CancellationToken cancellationToken) => Task.FromResult(Guid.Empty);
+}
+
+internal sealed class BaseCommandValidator : AbstractValidator<BaseCommand>
+{
+    public BaseCommandValidator() => RuleFor(command => command.Name).NotEmpty();
+}
+
+internal sealed class NamedMessageValidator : AbstractValidator<INamedMessage>
+{
+    public NamedMessageValidator() => RuleFor(message => message.Name).NotEmpty();
+}
+
+internal sealed class InvoiceIssuedEventValidator : AbstractValidator<InvoiceIssuedEvent>
+{
+    public InvoiceIssuedEventValidator() => RuleFor(issued => issued.Number).NotEmpty();
+}
+
+internal abstract class TracingStep(StepTrace trace, IUnitOfWork unitOfWork) : IPipelineStep
+{
+    public abstract int Order { get; }
+
+    public Task<object?> InvokeAsync(MessageContext context, Func<CancellationToken, Task<object?>> next, CancellationToken cancellationToken)
+    {
+        trace.Entries.Add((GetType().Name, unitOfWork.IsActive));
+        return next(cancellationToken);
+    }
+}
+
+internal sealed class AfterLoggingStep(StepTrace trace, IUnitOfWork unitOfWork) : TracingStep(trace, unitOfWork)
+{
+    public override int Order => PipelineOrder.Logging + 500;
+}
+
+internal sealed class AfterRetryStep(StepTrace trace, IUnitOfWork unitOfWork) : TracingStep(trace, unitOfWork)
+{
+    public override int Order => PipelineOrder.Retry + 500;
+}
+
+internal sealed class AfterUnitOfWorkStep(StepTrace trace, IUnitOfWork unitOfWork) : TracingStep(trace, unitOfWork)
+{
+    public override int Order => PipelineOrder.UnitOfWork + 500;
+}
+
+internal sealed class RetrySlotStep : IPipelineStep
+{
+    public int Order => PipelineOrder.Retry;
+
+    public Task<object?> InvokeAsync(MessageContext context, Func<CancellationToken, Task<object?>> next, CancellationToken cancellationToken) => next(cancellationToken);
 }

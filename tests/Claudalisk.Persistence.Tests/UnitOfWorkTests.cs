@@ -11,6 +11,30 @@ public sealed class UnitOfWorkTests
     private sealed class CompositionFailed(string message) : Exception(message);
 
     [Fact]
+    public async Task TheUnitOfWorkIsActiveOnlyWhileItsWorkRuns()
+    {
+        await using var app = await PostgresServer.CreateAppAsync();
+        await using var scope = app.CreateAsyncScope();
+        var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var during = new List<bool>();
+
+        Assert.False(unitOfWork.IsActive);
+        await unitOfWork.RunAsync(async _ =>
+        {
+            during.Add(unitOfWork.IsActive);
+            await unitOfWork.RunAsync(_ =>
+            {
+                during.Add(unitOfWork.IsActive);
+                return Task.CompletedTask;
+            }, TestContext.Current.CancellationToken);
+        }, TestContext.Current.CancellationToken);
+        await Assert.ThrowsAsync<CompositionFailed>(() => unitOfWork.RunAsync(_ => throw new CompositionFailed("boom"), TestContext.Current.CancellationToken));
+
+        Assert.Equal([true, true], during);
+        Assert.False(unitOfWork.IsActive);
+    }
+
+    [Fact]
     public async Task WorkFromTwoModulesCommitsTogether()
     {
         await using var app = await PostgresServer.CreateAppAsync();

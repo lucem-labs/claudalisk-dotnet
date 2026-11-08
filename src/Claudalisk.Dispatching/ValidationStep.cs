@@ -5,9 +5,13 @@ namespace Claudalisk.Dispatching;
 
 internal sealed class ValidationStep(IServiceProvider scope) : IPipelineStep
 {
+    public int Order => PipelineOrder.Validation;
+
     public async Task<object?> InvokeAsync(MessageContext context, Func<CancellationToken, Task<object?>> next, CancellationToken cancellationToken)
     {
-        var validators = scope.GetServices(typeof(IValidator<>).MakeGenericType(context.MessageType)).OfType<IValidator>().ToArray();
+        var validators = scope.GetServices(typeof(IValidator<>).MakeGenericType(context.MessageType)).OfType<IValidator>()
+            .Concat(scope.GetRequiredService<DispatchRegistry>().UnregisteredValidatorsFor(context.MessageType).Select(type => (IValidator)ActivatorUtilities.CreateInstance(scope, type)))
+            .ToArray();
         var errors = new Dictionary<string, List<string>>(StringComparer.Ordinal);
         foreach (var validator in validators)
         {
