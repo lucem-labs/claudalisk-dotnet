@@ -43,8 +43,10 @@ public sealed class DedupeTests
         await firstQueued.Task;
         var second = EnqueueAsync(app, new FlakyCommand(0), options);
 
+        var polls = 0;
         while (Equals(await ScalarAsync(app, WaitingOnAdvisoryLock), 0L))
         {
+            Assert.True(++polls <= 2000, "The second enqueue never blocked on the advisory lock.");
             await Task.Delay(10, TestContext.Current.CancellationToken);
         }
 
@@ -65,6 +67,7 @@ public sealed class DedupeTests
 
         await ScalarAsync(app, PostgreSql.JobsTable.CreateDedupeIndexSql("billing"));
 
+        Assert.Equal((1L, 0L), await DedupeIndexesAsync(app));
         Assert.Equal<(string, string)>(
             [("newer", "queued"), ("older", "canceled"), ("other-kind", "queued")],
             await StatusesAsync(app));
@@ -73,6 +76,7 @@ public sealed class DedupeTests
         Assert.Equal(PostgresErrorCodes.UniqueViolation, refused.SqlState);
 
         await ScalarAsync(app, PostgreSql.JobsTable.DropDedupeIndexSql("billing"));
+        Assert.Equal((0L, 1L), await DedupeIndexesAsync(app));
         await ScalarAsync(app, Insert("again", "now()"));
 
         Assert.Equal(1L, await ScalarAsync(app, "SELECT count(*) FROM billing.jobs WHERE payload->>'name' = 'again'"));
@@ -131,6 +135,10 @@ public sealed class DedupeTests
         var newer = await EnqueueAsync(app, new FlakyCommand(0), options);
         return (transport, orders, running, newer);
     }
+
+    private static async Task<(long Unique, long Plain)> DedupeIndexesAsync(IServiceProvider app) =>
+        ((long)(await ScalarAsync(app, "SELECT count(*) FROM pg_indexes WHERE schemaname = 'billing' AND indexname = 'ux_jobs_dedupe'"))!,
+        (long)(await ScalarAsync(app, "SELECT count(*) FROM pg_indexes WHERE schemaname = 'billing' AND indexname = 'ix_jobs_dedupe'"))!);
 
     private static string Insert(string name, string createdAt, string kind = "first") =>
         $"INSERT INTO billing.jobs (id, kind, payload, lane, status, max_attempts, dedupe_key, created_at) VALUES (gen_random_uuid(), '{kind}', '{{\"name\":\"{name}\"}}', 'default', 'queued', 5, 'k', {createdAt});";

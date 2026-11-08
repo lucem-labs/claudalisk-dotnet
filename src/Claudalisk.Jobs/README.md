@@ -10,7 +10,7 @@ Jobs are settled in the same unit of work as the handler's writes: every command
 
 ## The completion guard
 
-`CompleteAsync` updates the row only `WHERE id = @id AND status = 'running' AND attempts = @attempt`, where `@attempt` is the attempt this run claimed (`IJobContext.Attempt`). When it updates no row, the run was settled by someone else: a rebuild marked the delivery succeeded, the job was canceled, or the stale sweep requeued it and another worker claimed it. The writer returns `false`, the runner throws an internal exception that rolls back the handler's writes in the unit of work, leaves the row exactly as it is, writes no retry or failure, and logs at Information.
+`CompleteAsync` updates the row only `WHERE id = @id AND status = 'running' AND attempts = @attempt`, where `@attempt` is the attempt this run claimed (`IJobContext.Attempt`). When it updates no row, the run was settled by someone else: a rebuild marked the delivery succeeded, the job was canceled, or the stale sweep requeued it and another worker claimed it. The guard covers the completing unit of work only: for a batch job taken over by another worker, the old run's earlier batches and checkpoints can still commit (tracked in issue #45). The writer returns `false`, the runner throws an internal exception that rolls back the handler's writes in the unit of work, leaves the row exactly as it is, writes no retry or failure, and logs at Information.
 
 ## Retries
 
@@ -61,4 +61,4 @@ Every name given to `AddModuleJobs` must be the name of a module in the `ModuleC
 `JobsTable.CreateSql(schema)` is what an app calls from its initial migration and it never changes. Later changes are separate helpers that an app calls from a new migration, each with a drop counterpart:
 
 - `CreatePruneIndexSql` / `DropPruneIndexSql`: index on finished rows
-- `CreateDedupeIndexSql` / `DropDedupeIndexSql`: cancels older queued duplicates of a kind and key (keeping the newest), then replaces `ix_jobs_dedupe` with the unique `ux_jobs_dedupe`. Call it in every module schema; without it the dedupe lock still works but the backstop is missing
+- `CreateDedupeIndexSql` / `DropDedupeIndexSql`: cancels older queued duplicates of a kind and key (keeping the newest), then replaces `ix_jobs_dedupe` with the unique `ux_jobs_dedupe`. `DropDedupeIndexSql` restores the old index but does not restore the duplicates `CreateDedupeIndexSql` canceled. Call it in every module schema; without it the dedupe lock still works but the backstop is missing
