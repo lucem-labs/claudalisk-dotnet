@@ -20,6 +20,19 @@ public sealed class MigrationHistoryMoveTests
     }
 
     [Fact]
+    public async Task FourHostsMovingTheSameHistoryConcurrentlyAllSucceed()
+    {
+        var database = await PostgresServer.CreateEmptyDatabaseAsync();
+        await MigrateAsync(database, moved: false);
+        await ExecuteAsync(database, "CREATE SCHEMA shop; ALTER TABLE orders.\"__EFMigrationsHistory\" SET SCHEMA shop");
+
+        await Task.WhenAll(Enumerable.Range(0, 4).Select(_ => Task.Run(() => MigrateAsync(database, moved: true), TestContext.Current.CancellationToken)));
+
+        Assert.Equal("0", await ScalarAsync(database, "SELECT count(*)::text FROM information_schema.tables WHERE table_schema = 'shop'"));
+        Assert.Equal("1", await ScalarAsync(database, "SELECT count(*)::text FROM orders.\"__EFMigrationsHistory\""));
+    }
+
+    [Fact]
     public async Task AHistoryInBothSchemasIsRefusedAndLeftUnchanged()
     {
         var database = await PostgresServer.CreateEmptyDatabaseAsync();

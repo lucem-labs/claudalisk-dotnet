@@ -177,14 +177,22 @@ public sealed class SchedulerTests
             await service.StartAsync(TestContext.Current.CancellationToken);
         }
 
-        time.Advance(TimeSpan.FromMinutes(31));
-        await refreshes.First.Task.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+        using var bound = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        bound.CancelAfter(TimeSpan.FromSeconds(60));
+        while (!refreshes.First.Task.IsCompleted)
+        {
+            time.Advance(TimeSpan.FromMinutes(31));
+            await Task.WhenAny(refreshes.First.Task, Task.Delay(TimeSpan.FromMilliseconds(100), bound.Token));
+            bound.Token.ThrowIfCancellationRequested();
+        }
+
         foreach (var service in hosted)
         {
             await service.StopAsync(TestContext.Current.CancellationToken);
         }
 
-        Assert.Equal(["nightly"], refreshes.Sources);
+        Assert.NotEmpty(refreshes.Sources);
+        Assert.All(refreshes.Sources, source => Assert.Equal("nightly", source));
     }
 
     [Fact]

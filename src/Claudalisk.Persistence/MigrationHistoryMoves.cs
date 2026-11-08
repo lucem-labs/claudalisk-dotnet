@@ -41,6 +41,12 @@ internal sealed partial class MigrationHistoryMoves(IServiceProvider services)
         var moved = new List<MovedMigrationHistory>();
         await services.GetRequiredService<IUnitOfWork>().RunAsync(async token =>
         {
+            var locking = new DbContext(new DbContextOptionsBuilder<DbContext>().UseClaudaliskModuleSchema(services, moves[0].To).Options);
+            await using (locking.ConfigureAwait(false))
+            {
+                await locking.Database.ExecuteSqlRawAsync($"SELECT pg_advisory_xact_lock({MigrationBaselines.AdvisoryLockKey})", token).ConfigureAwait(false);
+            }
+
             foreach (var move in moves)
             {
                 var context = new DbContext(new DbContextOptionsBuilder<DbContext>().UseClaudaliskModuleSchema(services, move.To).Options);

@@ -60,8 +60,15 @@ internal sealed partial class Dispatcher : IDispatcher
             var context = new MessageContext(message, messageType, handler.ResultType, kind);
             var invoke = Invokers.GetOrAdd((messageType, handler.ResultType), key =>
                 InvokeMethod.MakeGenericMethod(key.Message, key.Result).CreateDelegate<Func<object, object, CancellationToken, Task<object?>>>());
-            if (kind == MessageKind.Command && frame.IsTopLevel && _scope.GetService<IUnitOfWork>() is not { IsActive: true })
+            var unitOfWork = _scope.GetService<IUnitOfWork>();
+            if (kind == MessageKind.Command && frame.IsTopLevel && unitOfWork is not { IsActive: true })
             {
+                if (unitOfWork is { HasForeignTransaction: true })
+                {
+                    throw new InvalidOperationException(
+                        $"'{messageType.FullName}' was sent while a DbContext in this scope has a transaction it began itself. The command would run on another connection, outside that transaction. Commit it first, or do the work in IUnitOfWork.RunAsync.");
+                }
+
                 var outer = _steps.Where(step => step.Order < PipelineOrder.Retry);
                 return await Run(context, outer, token => AttemptsAsync(context, handler, invoke, token), cancellationToken).ConfigureAwait(false);
             }

@@ -18,6 +18,26 @@ public sealed class DispatcherTests
     }
 
     [Fact]
+    public async Task ACommandIsRefusedWhileAContextHoldsATransactionItBeganItself()
+    {
+        await using var app = await PostgresServer.CreateAppAsync();
+        var token = TestContext.Current.CancellationToken;
+        await using var scope = app.CreateAsyncScope();
+        var dispatcher = scope.ServiceProvider.GetRequiredService<IDispatcher>();
+        var orders = scope.ServiceProvider.GetRequiredService<OrdersDbContext>();
+        var command = new CheckOutCommand(Guid.NewGuid(), "A-1", 10m, FailAfterBoth: false);
+        var transaction = await orders.Database.BeginTransactionAsync(token);
+
+        var refused = await Assert.ThrowsAsync<InvalidOperationException>(() => dispatcher.SendAsync<Guid>(command, token).AsTask());
+        await transaction.RollbackAsync(token);
+        await transaction.DisposeAsync();
+        await dispatcher.SendAsync<Guid>(command, token);
+
+        Assert.Contains("began itself", refused.Message);
+        Assert.Equal((1, 1), await CountAsync(app));
+    }
+
+    [Fact]
     public async Task ADatabaseErrorInTheSecondModuleRollsBackTheFirst()
     {
         await using var app = await PostgresServer.CreateAppAsync();

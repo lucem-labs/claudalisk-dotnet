@@ -112,17 +112,17 @@ internal interface IJobTransport
 
     Task WaitForWorkAsync(JobsModule module, string lane, TimeSpan timeout, CancellationToken cancellationToken);
 
-    Task<bool> HeartbeatAsync(JobsModule module, Guid id, CancellationToken cancellationToken);
+    Task<bool> HeartbeatAsync(JobsModule module, Guid id, int attempt, CancellationToken cancellationToken);
 
-    Task<bool> IsCancelRequestedAsync(JobsModule module, Guid id, CancellationToken cancellationToken);
+    Task<bool> IsCancelRequestedAsync(JobsModule module, Guid id, int attempt, CancellationToken cancellationToken);
 
-    Task ReportProgressAsync(JobsModule module, Guid id, double fraction, string? step, CancellationToken cancellationToken);
+    Task ReportProgressAsync(JobsModule module, Guid id, int attempt, double fraction, string? step, CancellationToken cancellationToken);
 
-    Task RetryOrFailAsync(JobsModule module, Guid id, JobError error, TimeSpan? retryAfter, CancellationToken cancellationToken);
+    Task RetryOrFailAsync(JobsModule module, Guid id, int attempt, JobError error, TimeSpan? retryAfter, CancellationToken cancellationToken);
 
-    Task MarkCanceledAsync(JobsModule module, Guid id, CancellationToken cancellationToken);
+    Task MarkCanceledAsync(JobsModule module, Guid id, int attempt, CancellationToken cancellationToken);
 
-    Task RequeueAsync(JobsModule module, Guid id, CancellationToken cancellationToken);
+    Task RequeueAsync(JobsModule module, Guid id, int attempt, CancellationToken cancellationToken);
 
     Task<JobRecord?> GetAsync(JobsModule module, Guid id, CancellationToken cancellationToken);
 
@@ -139,7 +139,7 @@ internal interface IJobWriter
 
     Task<bool> CompleteAsync(JobsModule module, Guid id, int attempt, string? resultLink, CancellationToken cancellationToken);
 
-    Task SaveCheckpointAsync(JobsModule module, Guid id, string checkpoint, double? progress, CancellationToken cancellationToken);
+    Task<bool> SaveCheckpointAsync(JobsModule module, Guid id, int attempt, string checkpoint, double? progress, CancellationToken cancellationToken);
 
     Task<bool> DeleteFinishedAsync(JobsModule module, Guid id, CancellationToken cancellationToken);
 

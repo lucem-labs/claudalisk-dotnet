@@ -43,11 +43,19 @@ internal sealed class JobContext(IJobTransport transport) : IJobContext
         }
     }
 
+    public async Task SaveCheckpointAsync(IJobWriter writer, string checkpoint, double? progress, CancellationToken cancellationToken)
+    {
+        if (!await writer.SaveCheckpointAsync(JobsModule, JobId, Attempt, checkpoint, progress, cancellationToken).ConfigureAwait(false))
+        {
+            throw new JobNoLongerRunningException(JobsModule.Name, JobId, Attempt);
+        }
+    }
+
     public Task ReportProgressAsync(double fraction, string? step, CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(fraction, 0);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(fraction, 1);
-        return transport.ReportProgressAsync(JobsModule, JobId, fraction, step, cancellationToken);
+        return transport.ReportProgressAsync(JobsModule, JobId, Attempt, fraction, step, cancellationToken);
     }
 
     private static InvalidOperationException NotInAJob() => new("This code is not running as a job.");
