@@ -82,7 +82,7 @@ public sealed class JobWorkersTests
         public Task<int> DeleteFinishedBeforeAsync(JobsModule module, TimeSpan retention, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 
-    [Fact]
+    [Fact(Timeout = 60_000)]
     public async Task AWorkerWhoseTransportKeepsFailingRetriesAfterThePollIntervalAndStopsCleanly()
     {
         var transport = new FailingTransport();
@@ -102,7 +102,7 @@ public sealed class JobWorkersTests
         Assert.True(workers.ExecuteTask!.IsCompletedSuccessfully);
     }
 
-    [Fact]
+    [Fact(Timeout = 60_000)]
     public async Task AWorkerWhoseClaimFailsAfterTheHostStartsStoppingStopsCleanly()
     {
         var transport = new FailingAtShutdownTransport();

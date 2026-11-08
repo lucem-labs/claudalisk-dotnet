@@ -21,14 +21,17 @@ public sealed partial class JobRunner
     private readonly JobsRegistry _registry;
     private readonly JobsOptions _options;
     private readonly ILogger<JobRunner> _logger;
+    private readonly TimeProvider _time;
 
-    internal JobRunner(IServiceScopeFactory scopes, IJobTransport transport, JobsRegistry registry, IOptions<JobsOptions> options, ILogger<JobRunner> logger)
+    internal JobRunner(
+        IServiceScopeFactory scopes, IJobTransport transport, JobsRegistry registry, IOptions<JobsOptions> options, ILogger<JobRunner> logger, TimeProvider time)
     {
         _scopes = scopes;
         _transport = transport;
         _registry = registry;
         _options = options.Value;
         _logger = logger;
+        _time = time;
     }
 
     public async Task<int> RunUntilIdleAsync(string module, string lane = JobOptions.DefaultLane, CancellationToken cancellationToken = default)
@@ -221,29 +224,32 @@ public sealed partial class JobRunner
 
     private async Task BeatAsync(JobsModule module, Guid id, CancellationTokenSource cancel, CancellationToken stop)
     {
-        using var timer = new PeriodicTimer(_options.HeartbeatInterval);
+        using var timer = new PeriodicTimer(_options.HeartbeatInterval, _time);
         try
         {
             while (await timer.WaitForNextTickAsync(stop))
             {
-                if (await _transport.HeartbeatAsync(module, id, stop))
+                try
                 {
-                    await cancel.CancelAsync();
+                    if (await _transport.HeartbeatAsync(module, id, stop))
+                    {
+                        await cancel.CancelAsync();
+                    }
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException || !stop.IsCancellationRequested)
+                {
+                    LogHeartbeatFailed(_logger, exception, module.Name, id);
                 }
             }
         }
         catch (OperationCanceledException) when (stop.IsCancellationRequested)
         {
         }
-        catch (Exception exception)
-        {
-            LogHeartbeatFailed(_logger, exception, module.Name, id);
-        }
     }
 
     private async Task WatchForCancelAsync(JobsModule module, Guid id, CancellationTokenSource cancel, CancellationToken stop)
     {
-        using var timer = new PeriodicTimer(_options.CancelCheckInterval);
+        using var timer = new PeriodicTimer(_options.CancelCheckInterval, _time);
         try
         {
             while (await timer.WaitForNextTickAsync(stop))

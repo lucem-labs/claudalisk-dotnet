@@ -53,7 +53,8 @@ public static class JobsServiceCollectionExtensions
             provider.GetRequiredService<IJobTransport>(),
             provider.GetRequiredService<JobsRegistry>(),
             provider.GetRequiredService<IOptions<JobsOptions>>(),
-            provider.GetRequiredService<ILogger<JobRunner>>()));
+            provider.GetRequiredService<ILogger<JobRunner>>(),
+            provider.GetService<TimeProvider>() ?? TimeProvider.System));
         services.AddHostedService<JobWorkers>();
         return services;
     }
