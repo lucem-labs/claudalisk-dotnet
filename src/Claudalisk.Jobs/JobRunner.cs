@@ -118,7 +118,7 @@ public sealed partial class JobRunner
         catch (Exception exception)
         {
             var error = ErrorFor(module, exception);
-            var retry = exception is not (MessageValidationException or DomainException) && claimed.Attempts < claimed.MaxAttempts;
+            var retry = exception is not (MessageValidationException or DomainException or StaleVersionException) && claimed.Attempts < claimed.MaxAttempts;
             if (error.Type == UnexpectedError)
             {
                 LogJobFailed(_logger, exception, module.Name, claimed.Id, claimed.Kind, claimed.Attempts);
@@ -287,6 +287,7 @@ public sealed partial class JobRunner
     {
         DomainException domain => new JobError($"/problems/{Claudalisk.AspNetCore.NameSegments.Kebab(module.Name)}/{domain.Slug}", domain.Title, domain.Title),
         MessageValidationException validation => new JobError("/problems/jobs/invalid", "The job's input is not valid.", validation.Message),
+        StaleVersionException => new JobError("/problems/precondition-failed", "The resource changed since the job read it.", null),
         DependencyUnavailableException => new JobError("/problems/dependency-unavailable", "A service this job needs is unavailable.", null),
         _ => new JobError(UnexpectedError, "The job failed.", null),
     };

@@ -46,12 +46,18 @@ internal sealed partial class ProblemDetailsExceptionHandler(IProblemDetailsServ
             Status = StatusCodes.Status400BadRequest,
             Title = "One or more values are not valid.",
         },
-        ConcurrencyConflictException conflict => new ProblemDetails
+        StaleVersionException stale => new ProblemDetails
         {
             Status = StatusCodes.Status412PreconditionFailed,
             Type = "/problems/precondition-failed",
             Title = "The resource changed since you read it.",
-            Detail = conflict.Message,
+            Detail = stale.Message,
+        },
+        ConcurrencyConflictException => new ProblemDetails
+        {
+            Status = StatusCodes.Status409Conflict,
+            Type = "/problems/concurrency-conflict",
+            Title = "Someone else changed this resource at the same time. Try again.",
         },
         PreconditionRequiredException required => new ProblemDetails
         {

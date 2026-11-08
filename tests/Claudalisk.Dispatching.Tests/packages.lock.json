@@ -344,6 +344,9 @@
           "FluentValidation": "[12.2.0, )"
         }
       },
+      "claudalisk.domain": {
+        "type": "Project"
+      },
       "claudalisk.modules": {
         "type": "Project"
       },

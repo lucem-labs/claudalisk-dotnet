@@ -26,6 +26,8 @@ public sealed record StrictCommand(string Reference);
 
 public sealed record RefusedCommand(string Reference);
 
+public sealed record StaleCommand(string Reference);
+
 public sealed record OutageCommand(int WaitMinutes);
 
 public sealed class OrderRefused() : DomainException("order-refused", "The order is refused.", DomainErrorKind.Conflict);
@@ -186,6 +188,11 @@ internal sealed class RefusedHandler : IHandler<RefusedCommand, int>
     public Task<int> HandleAsync(RefusedCommand message, CancellationToken cancellationToken) => throw new OrderRefused();
 }
 
+internal sealed class StaleHandler : IHandler<StaleCommand, int>
+{
+    public Task<int> HandleAsync(StaleCommand message, CancellationToken cancellationToken) => throw new StaleVersionException(2, 3);
+}
+
 internal sealed class OutageHandler : IHandler<OutageCommand, int>
 {
     public Task<int> HandleAsync(OutageCommand message, CancellationToken cancellationToken) =>
@@ -338,6 +345,7 @@ public sealed class OrdersModule : IModule
             .Command<FlakyCommand>("flaky")
             .Command<StrictCommand>("strict")
             .Command<RefusedCommand>("refused")
+            .Command<StaleCommand>("stale")
             .Command<OutageCommand>("outage")
             .Command<WaitCommand>("wait")
             .Batch<ImportOrdersCommand, ImportCheckpoint, ImportOrdersHandler>("import-orders")

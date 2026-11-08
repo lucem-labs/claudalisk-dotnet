@@ -23,6 +23,14 @@ public abstract class AggregateRoot
 
     public void IncrementVersion() => Version++;
 
+    public void RequireVersion(long expectedVersion)
+    {
+        if (Version != expectedVersion)
+        {
+            throw new StaleVersionException(expectedVersion, Version);
+        }
+    }
+
     public IReadOnlyList<IDomainEvent> TakeDomainEvents()
     {
         var events = _domainEvents.ToArray();

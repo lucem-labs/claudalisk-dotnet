@@ -24,6 +24,8 @@ public sealed record FlakyCommand(Guid Id, int FailAttempts);
 
 public sealed record RelayCommand(Guid Id);
 
+public sealed record StaleCommand;
+
 public sealed record ConflictingQuery;
 
 public sealed record GateQuery;

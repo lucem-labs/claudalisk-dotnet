@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Claudalisk.Dispatching\Claudalisk.Dispatching.csproj" />
+    <ProjectReference Include="..\..\src\Claudalisk.Domain\Claudalisk.Domain.csproj" />
     <ProjectReference Include="..\..\src\Claudalisk.Persistence\Claudalisk.Persistence.csproj" />
     <ProjectReference Include="..\Claudalisk.Dispatching.Tests.LateModule\Claudalisk.Dispatching.Tests.LateModule.csproj" />
   </ItemGroup>

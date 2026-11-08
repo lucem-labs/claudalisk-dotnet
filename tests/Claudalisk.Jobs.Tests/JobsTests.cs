@@ -163,6 +163,18 @@ public sealed class JobsTests
     }
 
     [Fact]
+    public async Task AStaleVersionFailsTheJobAtOnceWithThePreconditionType()
+    {
+        await using var app = await PostgresServer.CreateAppAsync();
+        var job = await EnqueueAsync(app, new StaleCommand("A-1"));
+
+        Assert.Equal(1, await Runner(app).RunUntilIdleAsync("Orders", cancellationToken: TestContext.Current.CancellationToken));
+
+        var failed = (await JobAsync(app, "Orders", job.Id))!;
+        Assert.Equal((JobStatus.Failed, 1, "/problems/precondition-failed"), (failed.Status, failed.Attempts, failed.LastError!.Type));
+    }
+
+    [Fact]
     public async Task AnUnavailableDependencyIsRetriedNoSoonerThanTheWaitItCarries()
     {
         await using var app = await PostgresServer.CreateAppAsync();

@@ -1,3 +1,4 @@
+using Claudalisk.Domain;
 using Claudalisk.Modules;
 using Claudalisk.Persistence;
 using FluentValidation;
@@ -236,6 +237,15 @@ internal sealed class RelayHandler(IDispatcher dispatcher) : IHandler<RelayComma
 {
     public Task<Guid> HandleAsync(RelayCommand message, CancellationToken cancellationToken) =>
         dispatcher.SendAsync<Guid>(new FlakyCommand(message.Id, int.MaxValue), cancellationToken);
+}
+
+internal sealed class StaleHandler(AttemptLog log, ScopeMarker marker) : IHandler<StaleCommand, int>
+{
+    public Task<int> HandleAsync(StaleCommand message, CancellationToken cancellationToken)
+    {
+        log.ScopeIds.Add(marker.Id);
+        throw new StaleVersionException(2, 3);
+    }
 }
 
 internal sealed class ConflictingHandler(AttemptLog log, ScopeMarker marker) : IHandler<ConflictingQuery, int>

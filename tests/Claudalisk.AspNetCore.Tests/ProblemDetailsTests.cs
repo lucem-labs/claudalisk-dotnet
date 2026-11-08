@@ -1,7 +1,9 @@
+using Claudalisk.Dispatching;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Claudalisk.AspNetCore.Tests;
 
@@ -46,7 +48,7 @@ public sealed class ProblemDetailsTests
     }
 
     [Fact]
-    public async Task AConcurrencyConflictBecomes412()
+    public async Task AStaleVersionBecomes412()
     {
         await using var app = await TestApp.StartAsync();
 
@@ -54,6 +56,58 @@ public sealed class ProblemDetailsTests
 
         Assert.Equal(HttpStatusCode.PreconditionFailed, response.StatusCode);
         Assert.Equal("/problems/precondition-failed", body.GetProperty("type").GetString());
+        Assert.Equal("The resource changed since you read it.", body.GetProperty("title").GetString());
+    }
+
+    [Fact]
+    public async Task AConcurrencyConflictBecomes409()
+    {
+        await using var app = await TestApp.StartAsync();
+
+        var (response, body) = await PostAsync(app, "/api/orders/fail/race");
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal("/problems/concurrency-conflict", body.GetProperty("type").GetString());
+        Assert.Equal(409, body.GetProperty("status").GetInt32());
+    }
+
+    [Fact]
+    public async Task AStaleIfMatchThroughTheDispatcherBecomes412AndTheHandlerRunsOnce()
+    {
+        await using var app = await TestApp.StartAsync();
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"/api/orders/{Guid.NewGuid()}");
+        request.Headers.TryAddWithoutValidation("If-Match", "\"7\"");
+
+        var response = await app.GetTestClient().SendAsync(request, TestContext.Current.CancellationToken);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.PreconditionFailed, response.StatusCode);
+        Assert.Equal("/problems/precondition-failed", body.GetProperty("type").GetString());
+        Assert.Equal(1, app.Services.GetRequiredService<HandlerRuns>().Revisions);
+    }
+
+    [Fact]
+    public async Task ACurrentIfMatchThroughTheDispatcherSucceeds()
+    {
+        await using var app = await TestApp.StartAsync();
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"/api/orders/{Guid.NewGuid()}");
+        request.Headers.TryAddWithoutValidation("If-Match", "\"8\"");
+
+        var response = await app.GetTestClient().SendAsync(request, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ARaceLostOnEveryAttemptBecomes409AfterExactlyTheConfiguredAttempts()
+    {
+        await using var app = await TestApp.StartAsync(configureServices: services => services.AddDispatching(options => options.ConcurrencyAttempts = 4));
+
+        var (response, body) = await PostAsync(app, $"/api/orders/{Guid.NewGuid()}/contest");
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal("/problems/concurrency-conflict", body.GetProperty("type").GetString());
+        Assert.Equal(4, app.Services.GetRequiredService<HandlerRuns>().Contests);
     }
 
     [Theory]

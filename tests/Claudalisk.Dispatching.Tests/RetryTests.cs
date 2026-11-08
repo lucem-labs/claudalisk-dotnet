@@ -1,3 +1,4 @@
+using Claudalisk.Domain;
 using Claudalisk.Persistence;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -39,6 +40,16 @@ public sealed class RetryTests
         await using var app = await PostgresServer.CreateAppAsync(services => services.AddDispatching(options => options.ConcurrencyAttempts = 1));
 
         await Assert.ThrowsAsync<ConcurrencyConflictException>(() => SendAsync<Guid>(app, new FlakyCommand(Guid.NewGuid(), 1)));
+
+        Assert.Single(app.GetRequiredService<AttemptLog>().ScopeIds);
+    }
+
+    [Fact]
+    public async Task AStaleVersionIsNeverRetried()
+    {
+        await using var app = await PostgresServer.CreateAppAsync();
+
+        await Assert.ThrowsAsync<StaleVersionException>(() => SendAsync<int>(app, new StaleCommand()));
 
         Assert.Single(app.GetRequiredService<AttemptLog>().ScopeIds);
     }
