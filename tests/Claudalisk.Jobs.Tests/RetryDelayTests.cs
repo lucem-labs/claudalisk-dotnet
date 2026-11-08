@@ -62,4 +62,48 @@ public sealed class RetryDelayTests
 
         Assert.Contains("RetryAfterMaxDelay", failure.Message, StringComparison.Ordinal);
     }
+
+    [Theory]
+    [InlineData(nameof(JobsOptions.HeartbeatInterval))]
+    [InlineData(nameof(JobsOptions.PollInterval))]
+    [InlineData(nameof(JobsOptions.StaleAfter))]
+    [InlineData(nameof(JobsOptions.RetryMaxDelay))]
+    public void EveryJobsIntervalMustBePositive(string name)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddDispatching();
+        services.AddJobs(options => typeof(JobsOptions).GetProperty(name)!.SetValue(options, TimeSpan.Zero));
+        using var provider = services.BuildServiceProvider();
+
+        var failure = Assert.Throws<OptionsValidationException>(() => provider.GetRequiredService<IOptions<JobsOptions>>().Value);
+
+        Assert.Contains(name, failure.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheRetryBaseDelayMustNotBeNegative()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddDispatching();
+        services.AddJobs(options => options.RetryBaseDelay = TimeSpan.FromSeconds(-1));
+        using var provider = services.BuildServiceProvider();
+
+        var failure = Assert.Throws<OptionsValidationException>(() => provider.GetRequiredService<IOptions<JobsOptions>>().Value);
+
+        Assert.Contains("RetryBaseDelay", failure.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void InvalidJobsOptionsFailTheStartupValidation()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddDispatching();
+        services.AddJobs(options => options.PollInterval = TimeSpan.Zero);
+        using var provider = services.BuildServiceProvider();
+
+        Assert.Throws<OptionsValidationException>(() => provider.GetRequiredService<IStartupValidator>().Validate());
+    }
 }

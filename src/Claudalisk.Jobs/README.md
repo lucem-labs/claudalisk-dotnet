@@ -22,7 +22,7 @@ These are not retried; the job fails at once with a problem type in `last_error`
 - `DomainException`: `/problems/{module}/{slug}`, the module being the exception's own module, resolved as the web package does (`ProblemTypes.For`). The exception's extension members are stored in `last_error` as `extensions` and shown by the router and the history
 - `StaleVersionException`: `/problems/precondition-failed`
 
-`DependencyUnavailableException` is retried and its `RetryAfter` replaces the backoff when longer. `JobsOptions.RetryAfterMaxDelay` (default one hour, must be positive) clamps it. `RetryMaxDelay` still bounds the backoff only.
+`DependencyUnavailableException` is retried and its `RetryAfter` replaces the backoff when longer. `JobsOptions.RetryAfterMaxDelay` (default one hour, must be positive) clamps it. `RetryMaxDelay` still bounds the backoff only. `AddJobs` validates the options when the host starts: every interval, `StaleAfter` and `RetryMaxDelay` must be positive and `RetryBaseDelay` must not be negative.
 
 A job canceled while it runs is marked canceled. A job interrupted by shutdown goes back to the queue without using an attempt.
 

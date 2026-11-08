@@ -38,10 +38,14 @@ public static class JobsServiceCollectionExtensions
 
         Registry(services);
         services.TryAddSingleton(TimeProvider.System);
-        services.AddOptions<JobsOptions>().Validate(
-            options => options.CancelCheckInterval > TimeSpan.Zero && options.PruneInterval > TimeSpan.Zero && options.FinishedJobRetention > TimeSpan.Zero
-                && options.RetryAfterMaxDelay > TimeSpan.Zero,
-            "JobsOptions.CancelCheckInterval, PruneInterval, FinishedJobRetention and RetryAfterMaxDelay must be positive.");
+        services.AddOptions<JobsOptions>()
+            .Validate(
+                options => options.CancelCheckInterval > TimeSpan.Zero && options.PruneInterval > TimeSpan.Zero && options.FinishedJobRetention > TimeSpan.Zero
+                    && options.RetryAfterMaxDelay > TimeSpan.Zero && options.HeartbeatInterval > TimeSpan.Zero && options.PollInterval > TimeSpan.Zero
+                    && options.StaleAfter > TimeSpan.Zero && options.RetryMaxDelay > TimeSpan.Zero,
+                "JobsOptions.CancelCheckInterval, PruneInterval, FinishedJobRetention, RetryAfterMaxDelay, HeartbeatInterval, PollInterval, StaleAfter and RetryMaxDelay must be positive.")
+            .Validate(options => options.RetryBaseDelay >= TimeSpan.Zero, "JobsOptions.RetryBaseDelay must not be negative.")
+            .ValidateOnStart();
         services.TryAddScoped<JobContext>();
         services.TryAddScoped<IJobContext>(provider => provider.GetRequiredService<JobContext>());
         services.TryAddScoped<IJobQueue, JobQueue>();
