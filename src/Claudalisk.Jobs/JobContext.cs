@@ -35,6 +35,14 @@ internal sealed class JobContext(IJobTransport transport) : IJobContext
         ResultLink = href;
     }
 
+    public async Task CompleteAsync(IJobWriter writer, CancellationToken cancellationToken)
+    {
+        if (!await writer.CompleteAsync(JobsModule, JobId, Attempt, ResultLink, cancellationToken))
+        {
+            throw new JobNoLongerRunningException(JobsModule.Name, JobId, Attempt);
+        }
+    }
+
     public Task ReportProgressAsync(double fraction, string? step, CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(fraction, 0);

@@ -24,7 +24,7 @@ internal sealed class JobsPipelineStep(JobContext job, EventPublisher publisher,
                 await publisher.PublishTrackedAsync(cancellationToken);
                 if (job.IsActive && !job.Completed && ReferenceEquals(context.Message, job.Command))
                 {
-                    await writer.CompleteAsync(job.JobsModule, job.JobId, job.ResultLink, cancellationToken);
+                    await job.CompleteAsync(writer, cancellationToken);
                     job.Completed = true;
                 }
             }

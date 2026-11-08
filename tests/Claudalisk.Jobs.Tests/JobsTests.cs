@@ -217,6 +217,28 @@ public sealed class JobsTests
         Assert.Equal((job.Id, 2), (reclaimed!.Id, reclaimed.Attempts));
     }
 
+    [Fact(Timeout = 60_000)]
+    public async Task AJobWhoseRowWasRequeuedAsStaleAndClaimedAgainCommitsNoneOfItsWrites()
+    {
+        await using var app = await PostgresServer.CreateAppAsync();
+        var orderId = Guid.NewGuid();
+        await SendAsync<JobReference>(app, new PlaceOrderCommand(orderId, "A-1", FailAfterQueueing: false));
+        var held = app.GetRequiredService<Signals>().Hold(orderId);
+        var running = Runner(app).RunNextAsync("Orders", cancellationToken: TestContext.Current.CancellationToken);
+        await held.Started.Task;
+        await ExecuteAsync(app, "UPDATE orders.jobs SET heartbeat_at = now() - interval '3 minutes'");
+        var transport = app.GetRequiredService<IJobTransport>();
+        var reclaimed = await transport.ClaimAsync(Registry(app).Find("Orders")!, JobOptions.DefaultLane, TimeSpan.FromMinutes(2), TestContext.Current.CancellationToken);
+
+        held.Release.SetResult();
+        await running;
+
+        Assert.Equal(2, reclaimed!.Attempts);
+        var record = (await JobAsync(app, "Orders", reclaimed.Id))!;
+        Assert.Equal((JobStatus.Running, 2, null), (record.Status, record.Attempts, record.LastError));
+        Assert.Equal(0, await CountAsync(app, "orders.orders WHERE shipped"));
+    }
+
     [Fact]
     public async Task CancelingAQueuedJobMeansItNeverRuns()
     {

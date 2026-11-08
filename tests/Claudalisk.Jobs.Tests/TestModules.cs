@@ -126,6 +126,33 @@ public sealed class Computations
 public sealed class Signals
 {
     private readonly Dictionary<Guid, (TaskCompletionSource Started, TaskCompletionSource Release)> _waits = [];
+    private readonly HashSet<Guid> _held = [];
+
+    public (TaskCompletionSource Started, TaskCompletionSource Release) Hold(Guid key)
+    {
+        lock (_waits)
+        {
+            _held.Add(key);
+        }
+
+        return For(key);
+    }
+
+    public async Task HoldIfAskedAsync(Guid key, CancellationToken cancellationToken)
+    {
+        bool held;
+        lock (_waits)
+        {
+            held = _held.Contains(key);
+        }
+
+        if (held)
+        {
+            var (started, release) = For(key);
+            started.TrySetResult();
+            await release.Task.WaitAsync(cancellationToken);
+        }
+    }
 
     public (TaskCompletionSource Started, TaskCompletionSource Release) For(Guid key)
     {
@@ -158,13 +185,14 @@ internal sealed class PlaceOrderHandler(OrdersDbContext db, IJobQueue jobs) : IH
     }
 }
 
-internal sealed class ShipOrderHandler(OrdersDbContext db, IJobContext job) : IHandler<ShipOrderCommand, Guid>
+internal sealed class ShipOrderHandler(OrdersDbContext db, IJobContext job, Signals signals) : IHandler<ShipOrderCommand, Guid>
 {
     public async Task<Guid> HandleAsync(ShipOrderCommand message, CancellationToken cancellationToken)
     {
         var order = await db.Orders.SingleAsync(row => row.Id == message.OrderId, cancellationToken);
         order.Shipped = true;
         await db.SaveChangesAsync(cancellationToken);
+        await signals.HoldIfAskedAsync(order.Id, cancellationToken);
         job.SetResult($"/api/orders/{order.Id}");
         return order.Id;
     }
@@ -298,12 +326,13 @@ internal sealed class ScoreOrdersHandler(OrdersDbContext db, IScopeConnection co
     }
 }
 
-internal sealed class RefundOnOrderCanceledHandler(BillingDbContext db) : IEventHandler<OrderCanceled>
+internal sealed class RefundOnOrderCanceledHandler(BillingDbContext db, Signals signals) : IEventHandler<OrderCanceled>
 {
     public async Task HandleAsync(OrderCanceled integrationEvent, CancellationToken cancellationToken)
     {
         db.Refunds.Add(new RefundRow { Id = Guid.NewGuid(), OrderId = integrationEvent.OrderId });
         await db.SaveChangesAsync(cancellationToken);
+        await signals.HoldIfAskedAsync(integrationEvent.OrderId, cancellationToken);
     }
 }
 

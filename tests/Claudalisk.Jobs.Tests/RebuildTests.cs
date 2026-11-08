@@ -36,6 +36,25 @@ public sealed class RebuildTests
         Assert.Equal(3L, await ScalarAsync(app, "SELECT count(*) FROM billing.refunds"));
     }
 
+    [Fact(Timeout = 60_000)]
+    public async Task AnEventDeliveryARebuildSettledWhileItsHandlerRanCommitsNoneOfTheHandlersWrites()
+    {
+        await using var app = await PostgresServer.CreateAppAsync();
+        var orderId = await CanceledOrderAsync(app);
+        var held = app.GetRequiredService<Signals>().Hold(orderId);
+        var delivering = Runner(app).RunNextAsync("Billing", "refunds", TestContext.Current.CancellationToken);
+        await held.Started.Task;
+        await EnqueueAsync(app, new RebuildRefundsCommand(Guid.NewGuid()));
+        Assert.True(await Runner(app).RunNextAsync("Billing", "refunds", TestContext.Current.CancellationToken));
+
+        held.Release.SetResult();
+        await delivering;
+
+        Assert.Equal<(Guid, string)>([(orderId, "succeeded")], await DeliveriesAsync(app));
+        Assert.Equal(1L, await ScalarAsync(app, "SELECT count(*) FROM billing.refunds"));
+        Assert.Equal(0L, await ScalarAsync(app, "SELECT count(*) FROM billing.jobs WHERE status = 'failed' OR last_error IS NOT NULL"));
+    }
+
     [Fact]
     public async Task ARebuildRunTwiceGivesTheSameReadModel()
     {

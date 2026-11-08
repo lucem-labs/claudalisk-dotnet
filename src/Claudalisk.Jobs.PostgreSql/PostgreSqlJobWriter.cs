@@ -43,17 +43,18 @@ internal sealed class PostgreSqlJobWriter(IScopeConnection scope) : IJobWriter
         return id;
     }
 
-    public async Task CompleteAsync(JobsModule module, Guid id, string? resultLink, CancellationToken cancellationToken)
+    public async Task<bool> CompleteAsync(JobsModule module, Guid id, int attempt, string? resultLink, CancellationToken cancellationToken)
     {
         await using var command = await CommandAsync(
             $"""
             UPDATE {JobsTable.Quote(module.Schema)}.jobs
             SET status = 'succeeded', finished_at = now(), heartbeat_at = NULL, result_link = @link, progress_fraction = 1
-            WHERE id = @id
+            WHERE id = @id AND status = 'running' AND attempts = @attempt
             """, cancellationToken);
         command.Parameters.AddWithValue("id", id);
+        command.Parameters.AddWithValue("attempt", attempt);
         command.Parameters.Add(new NpgsqlParameter("link", NpgsqlDbType.Text) { Value = (object?)resultLink ?? DBNull.Value });
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
 
     public async Task SaveCheckpointAsync(JobsModule module, Guid id, string checkpoint, double? progress, CancellationToken cancellationToken)

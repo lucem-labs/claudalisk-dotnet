@@ -105,7 +105,7 @@ public sealed partial class JobRunner
                         await (Task)EventMethod.MakeGenericMethod(kind.PayloadType)
                             .Invoke(null, [scope.ServiceProvider.GetRequiredService(kind.HandlerType!), payload, token])!;
                         await scope.ServiceProvider.GetRequiredService<EventPublisher>().PublishTrackedAsync(token);
-                        await scope.ServiceProvider.GetRequiredService<IJobWriter>().CompleteAsync(module, claimed.Id, context.ResultLink, token);
+                        await context.CompleteAsync(scope.ServiceProvider.GetRequiredService<IJobWriter>(), token);
                     }, cancel.Token);
                     break;
             }
@@ -117,6 +117,10 @@ public sealed partial class JobRunner
         catch (OperationCanceledException) when (cancel.IsCancellationRequested)
         {
             await _transport.MarkCanceledAsync(module, claimed.Id, CancellationToken.None);
+        }
+        catch (JobNoLongerRunningException exception)
+        {
+            LogNoLongerRunning(_logger, module.Name, claimed.Id, claimed.Kind, exception.Attempt);
         }
         catch (Exception exception)
         {
@@ -191,7 +195,7 @@ public sealed partial class JobRunner
             await publisher.PublishTrackedAsync(token);
             if (next.Done)
             {
-                await writer.CompleteAsync(context.JobsModule, context.JobId, context.ResultLink, token);
+                await context.CompleteAsync(writer, token);
             }
 
             return next;
@@ -215,7 +219,7 @@ public sealed partial class JobRunner
                 .ToArray();
             await writer.MarkSucceededAsync(context.JobsModule, kind.EventKind!, included, token);
             await publisher.PublishTrackedAsync(token);
-            await writer.CompleteAsync(context.JobsModule, context.JobId, context.ResultLink, token);
+            await context.CompleteAsync(writer, token);
         }, cancellationToken);
     }
 
@@ -300,6 +304,9 @@ public sealed partial class JobRunner
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Job {Module}/{Id} ({Kind}) failed on attempt {Attempt}")]
     private static partial void LogJobFailed(ILogger logger, Exception exception, string module, Guid id, string kind, int attempt);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Job {Module}/{Id} ({Kind}) attempt {Attempt} was settled or taken over while it ran; its writes were rolled back and the row is left as it is")]
+    private static partial void LogNoLongerRunning(ILogger logger, string module, Guid id, string kind, int attempt);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "The heartbeat of job {Module}/{Id} failed")]
     private static partial void LogHeartbeatFailed(ILogger logger, Exception exception, string module, Guid id);

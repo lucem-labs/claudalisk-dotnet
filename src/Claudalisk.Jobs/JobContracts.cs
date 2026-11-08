@@ -135,7 +135,7 @@ public interface IJobWriter
 {
     Task<Guid> InsertAsync(JobsModule module, NewJob job, CancellationToken cancellationToken);
 
-    Task CompleteAsync(JobsModule module, Guid id, string? resultLink, CancellationToken cancellationToken);
+    Task<bool> CompleteAsync(JobsModule module, Guid id, int attempt, string? resultLink, CancellationToken cancellationToken);
 
     Task SaveCheckpointAsync(JobsModule module, Guid id, string checkpoint, double? progress, CancellationToken cancellationToken);
 
