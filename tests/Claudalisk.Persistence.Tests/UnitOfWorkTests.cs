@@ -269,6 +269,57 @@ public sealed class UnitOfWorkTests
     }
 
     [Fact]
+    public async Task ALongLivedScopeRemembersOnlyTheLastFinishedTransaction()
+    {
+        await using var app = await PostgresServer.CreateAppAsync();
+        await using var scope = app.CreateAsyncScope();
+        var (unitOfWork, orders, _) = Resolve(scope.ServiceProvider);
+        var session = scope.ServiceProvider.GetRequiredService<DbSession>();
+
+        NpgsqlTransaction? last = null;
+        for (var i = 0; i < 3; i++)
+        {
+            await unitOfWork.RunAsync(async token =>
+            {
+                last = session.Transaction;
+                await orders.PlaceAsync(Guid.NewGuid(), $"A-{i}", token);
+            }, TestContext.Current.CancellationToken);
+        }
+
+        Assert.NotNull(last);
+        Assert.Same(last, session.LastFinishedTransaction);
+    }
+
+    [Fact]
+    public async Task AContextLeftOutOfTheLastUnitOfWorkIsNotLeftOnAnEarlierOne()
+    {
+        await using var app = await PostgresServer.CreateAppAsync();
+        await using (var scope = app.CreateAsyncScope())
+        {
+            var (unitOfWork, orders, billing) = Resolve(scope.ServiceProvider);
+            var orderId = Guid.NewGuid();
+            await unitOfWork.RunAsync(token => orders.PlaceAsync(orderId, "A-1", token), TestContext.Current.CancellationToken);
+            await unitOfWork.RunAsync(token => billing.ChargeAsync(orderId, 10m, token), TestContext.Current.CancellationToken);
+            await orders.PlaceAsync(Guid.NewGuid(), "A-2", TestContext.Current.CancellationToken);
+        }
+
+        Assert.Equal(new Counts(2, 1, 0), await CountAsync(app));
+    }
+
+    [Fact]
+    public async Task ANullWorkDelegateIsRejectedBeforeATransactionOpens()
+    {
+        await using var app = new ServiceCollection().AddTestModules("Host=localhost;Database=unused").BuildServiceProvider();
+        await using var scope = app.CreateAsyncScope();
+        var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+
+        await Assert.ThrowsAsync<ArgumentNullException>(
+            () => unitOfWork.RunAsync((Func<CancellationToken, Task>)null!, TestContext.Current.CancellationToken));
+
+        Assert.Null(scope.ServiceProvider.GetRequiredService<DbSession>().LastFinishedTransaction);
+    }
+
+    [Fact]
     public async Task EachModuleKeepsItsOwnSchemaSnakeCaseNamesAndMigrationsHistory()
     {
         await using var app = await PostgresServer.CreateAppAsync();

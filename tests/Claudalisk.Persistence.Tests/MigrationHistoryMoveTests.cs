@@ -75,6 +75,33 @@ public sealed class MigrationHistoryMoveTests
         Assert.Single(services, descriptor => descriptor.ImplementationInstance is MovedMigrationHistory);
     }
 
+    [Fact]
+    public void AConflictingMoveIsRejected()
+    {
+        var services = new ServiceCollection().AddMovedMigrationHistory("shop", "orders");
+
+        var otherSource = Assert.Throws<InvalidOperationException>(() => services.AddMovedMigrationHistory("till", "orders"));
+        var otherTarget = Assert.Throws<InvalidOperationException>(() => services.AddMovedMigrationHistory("shop", "billing"));
+
+        Assert.Contains("'shop'", otherSource.Message);
+        Assert.Contains("'till'", otherSource.Message);
+        Assert.Contains("'orders'", otherTarget.Message);
+        Assert.Contains("'billing'", otherTarget.Message);
+        Assert.Single(services, descriptor => descriptor.ImplementationInstance is MovedMigrationHistory);
+    }
+
+    [Fact]
+    public void AMoveThatConflictsWithTwoEarlierMovesNamesOneOfThem()
+    {
+        var services = new ServiceCollection()
+            .AddMovedMigrationHistory("shop", "orders")
+            .AddMovedMigrationHistory("till", "billing");
+
+        var conflict = Assert.Throws<InvalidOperationException>(() => services.AddMovedMigrationHistory("shop", "billing"));
+
+        Assert.Contains("is already registered and conflicts with the move from 'shop' to 'billing'", conflict.Message);
+    }
+
     private static async Task MigrateAsync(string database, bool moved)
     {
         await using var app = PostgresServer.CreateApp(database, services =>

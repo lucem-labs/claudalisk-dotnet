@@ -60,6 +60,63 @@ public sealed class PersistenceSetupTests
     }
 
     [Fact]
+    public void TwoModuleContextsCannotShareASchema()
+    {
+        var services = new ServiceCollection()
+            .AddPersistence("Host=localhost;Database=unused")
+            .AddModuleDbContext<OrdersDbContext>(OrdersDbContext.Schema);
+
+        var error = Assert.Throws<InvalidOperationException>(() => services.AddModuleDbContext<BillingDbContext>(OrdersDbContext.Schema));
+
+        Assert.Contains(nameof(OrdersDbContext), error.Message);
+        Assert.Contains(nameof(BillingDbContext), error.Message);
+        Assert.Contains($"'{OrdersDbContext.Schema}'", error.Message);
+        Assert.DoesNotContain(services, descriptor => descriptor.ServiceType == typeof(BillingDbContext));
+    }
+
+    [Fact]
+    public void AModuleContextCannotBeRegisteredAgainWithAnotherSchema()
+    {
+        var services = new ServiceCollection()
+            .AddPersistence("Host=localhost;Database=unused")
+            .AddModuleDbContext<OrdersDbContext>(OrdersDbContext.Schema);
+
+        var error = Assert.Throws<InvalidOperationException>(() => services.AddModuleDbContext<OrdersDbContext>("sales"));
+
+        Assert.Contains(nameof(OrdersDbContext), error.Message);
+        Assert.Contains($"'{OrdersDbContext.Schema}'", error.Message);
+        Assert.Contains("'sales'", error.Message);
+        Assert.Single(services, descriptor => descriptor.ImplementationInstance is ModuleDbContextRegistration);
+    }
+
+    [Fact]
+    public void AddPersistenceCannotBeCalledAgainWithAnotherConnectionString()
+    {
+        var services = new ServiceCollection().AddPersistence("Host=localhost;Database=first");
+
+        var error = Assert.Throws<InvalidOperationException>(() => services.AddPersistence("Host=localhost;Database=second"));
+
+        Assert.Contains("another connection string", error.Message);
+        Assert.Single(services, descriptor => descriptor.ServiceType == typeof(Npgsql.NpgsqlDataSource));
+    }
+
+    [Fact]
+    public void AModuleContextWithoutAddPersistenceFailsWithItsOwnMessage()
+    {
+        var services = new ServiceCollection()
+            .AddDbContext<BillingDbContext>((provider, options) => options
+                .UseModuleSchema(provider, BillingDbContext.Schema)
+                .EnableServiceProviderCaching(false));
+        using var app = services.BuildServiceProvider();
+        using var scope = app.CreateScope();
+
+        var error = Assert.Throws<InvalidOperationException>(() => scope.ServiceProvider.GetRequiredService<BillingDbContext>().Model);
+
+        Assert.Equal(PersistenceServiceCollectionExtensions.MissingPersistenceMessage, error.Message);
+        Assert.DoesNotContain("AddDbContextPool", error.Message);
+    }
+
+    [Fact]
     public void APooledModuleContextFailsWithAClearMessage()
     {
         var services = new ServiceCollection()

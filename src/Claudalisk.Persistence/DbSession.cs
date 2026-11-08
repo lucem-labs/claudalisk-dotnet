@@ -8,7 +8,7 @@ internal sealed class DbSession(NpgsqlDataSource dataSource) : IScopeConnection,
 
     public NpgsqlTransaction? Transaction { get; set; }
 
-    public HashSet<NpgsqlTransaction> FinishedTransactions { get; } = [];
+    public NpgsqlTransaction? LastFinishedTransaction { get; set; }
 
     public void Dispose() => Connection.Dispose();
 

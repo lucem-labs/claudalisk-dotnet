@@ -4,7 +4,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
-using Npgsql;
 
 namespace Claudalisk.Persistence;
 
@@ -55,7 +54,7 @@ internal sealed class EnlistInSessionTransaction(DbSession session) : SaveChange
         var current = context.Database.CurrentTransaction?.GetDbTransaction();
         if (session.Transaction is null)
         {
-            if (current is NpgsqlTransaction finished && session.FinishedTransactions.Contains(finished))
+            if (current is not null && ReferenceEquals(current, session.LastFinishedTransaction))
             {
                 context.Database.UseTransaction(null);
             }
