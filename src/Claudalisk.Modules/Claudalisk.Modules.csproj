@@ -8,5 +8,7 @@
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <InternalsVisibleTo Include="Claudalisk.Modules.Tests" />
+    <InternalsVisibleTo Include="Claudalisk.AspNetCore" />
+    <InternalsVisibleTo Include="Claudalisk.AspNetCore.Tests" />
   </ItemGroup>
 </Project>

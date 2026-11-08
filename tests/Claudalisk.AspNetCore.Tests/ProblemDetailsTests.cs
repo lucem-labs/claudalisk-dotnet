@@ -1,3 +1,4 @@
+using Claudalisk.Modules;
 using Claudalisk.Dispatching;
 using Claudalisk.Domain;
 using System.Net;

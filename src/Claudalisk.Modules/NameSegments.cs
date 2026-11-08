@@ -1,4 +1,4 @@
-namespace Claudalisk.AspNetCore;
+namespace Claudalisk.Modules;
 
 public static class NameSegments
 {

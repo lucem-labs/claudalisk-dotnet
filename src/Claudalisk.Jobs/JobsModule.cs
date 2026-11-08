@@ -30,7 +30,7 @@ public sealed partial class JobsModule
 
         Name = name;
         Schema = schema!;
-        Segment = Claudalisk.AspNetCore.NameSegments.Kebab(name);
+        Segment = Claudalisk.Modules.NameSegments.Kebab(name);
     }
 
     public string Name { get; }

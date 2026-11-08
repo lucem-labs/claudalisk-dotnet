@@ -1,4 +1,3 @@
-using Claudalisk.AspNetCore;
 using Claudalisk.Jobs;
 using Claudalisk.Modules;
 using Microsoft.Extensions.Hosting;
