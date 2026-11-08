@@ -28,7 +28,7 @@ public static class Versions
             || !long.TryParse(tag.Tag.ToString().Trim('"'), NumberStyles.None, CultureInfo.InvariantCulture, out var version)
             || version < 1)
         {
-            throw new BadHttpRequestException($"If-Match must be one strong version tag, such as \"7\"; got {header}.");
+            throw new BadHttpRequestException("If-Match must be one strong version tag, such as \"7\".");
         }
 
         return version;

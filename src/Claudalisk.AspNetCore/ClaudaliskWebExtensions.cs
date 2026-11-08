@@ -20,7 +20,9 @@ public static class ClaudaliskWebExtensions
             return services;
         }
 
-        services.AddOptions<ClaudaliskWebOptions>();
+        services.AddOptions<ClaudaliskWebOptions>()
+            .Validate(options => options.DefaultRetryAfter > TimeSpan.Zero, "ClaudaliskWebOptions.DefaultRetryAfter must be positive.")
+            .ValidateOnStart();
         services.ConfigureHttpJsonOptions(options => options.SerializerOptions.NumberHandling = JsonNumberHandling.Strict);
         services.Configure<Microsoft.AspNetCore.Mvc.JsonOptions>(options => options.JsonSerializerOptions.NumberHandling = JsonNumberHandling.Strict);
         services.AddProblemDetails();
@@ -29,6 +31,7 @@ public static class ClaudaliskWebExtensions
         services.AddOpenApi(options =>
         {
             options.AddOperationTransformer<ModuleTags>();
+            options.AddOperationTransformer<ProblemResponses>();
             options.AddDocumentTransformer<ModuleTags>();
         });
         return services;

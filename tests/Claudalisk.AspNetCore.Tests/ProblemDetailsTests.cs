@@ -1,9 +1,12 @@
 using Claudalisk.Dispatching;
+using Claudalisk.Domain;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Claudalisk.AspNetCore.Tests;
 
@@ -135,6 +138,79 @@ public sealed class ProblemDetailsTests
     public void RetryAfterIsTheWaitInWholeSecondsRoundedUp(double seconds, string retryAfter)
     {
         Assert.Equal(retryAfter, ProblemDetailsExceptionHandler.RetryAfterSeconds(TimeSpan.FromSeconds(seconds)));
+    }
+
+    [Fact]
+    public async Task TheRetryAfterComesFromTheOptionsWhenTheExceptionCarriesNone()
+    {
+        await using var app = await TestApp.StartAsync(configure: options => options.DefaultRetryAfter = TimeSpan.FromSeconds(120));
+
+        var (response, _) = await PostAsync(app, "/api/orders/fail/unavailable");
+
+        Assert.Equal("120", Assert.Single(response.Headers.GetValues("Retry-After")));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-5)]
+    public async Task ANonPositiveDefaultRetryAfterFailsAtStartup(int seconds)
+    {
+        var error = await Assert.ThrowsAsync<OptionsValidationException>(
+            () => TestApp.StartAsync(configure: options => options.DefaultRetryAfter = TimeSpan.FromSeconds(seconds)));
+
+        Assert.Contains("DefaultRetryAfter", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheMappingCarriesTheRetryAfterOfTheException()
+    {
+        var withWait = ProblemDetailsExceptionHandler.ProblemFor(new DependencyUnavailableException("down", TimeSpan.FromSeconds(89.2)), null, TimeSpan.FromSeconds(30));
+        var withoutWait = ProblemDetailsExceptionHandler.ProblemFor(new DependencyUnavailableException("down"), null, TimeSpan.FromSeconds(30));
+        var other = ProblemDetailsExceptionHandler.ProblemFor(new InvalidOperationException("bug"), null, TimeSpan.FromSeconds(30));
+
+        Assert.Equal(503, withWait.Problem.Status);
+        Assert.Equal("90", withWait.Headers["Retry-After"]);
+        Assert.Equal("30", withoutWait.Headers["Retry-After"]);
+        Assert.Empty(other.Headers);
+    }
+
+    [Fact]
+    public async Task AnUnavailableDependencyIsLoggedAtWarningWithTheException()
+    {
+        var log = new LogCollector();
+        await using var app = await TestApp.StartAsync(configureServices: services => services.AddLogging(logging => logging.AddProvider(log)));
+
+        await PostAsync(app, "/api/orders/fail/unavailable");
+
+        var entry = Assert.Single(log.Entries, entry => entry.Category == typeof(ProblemDetailsExceptionHandler).FullName);
+        Assert.Equal((LogLevel.Warning, true), (entry.Level, entry.HasException));
+    }
+
+    [Fact]
+    public async Task AnUnexpectedErrorIsLoggedAtError()
+    {
+        var log = new LogCollector();
+        await using var app = await TestApp.StartAsync(configureServices: services => services.AddLogging(logging => logging.AddProvider(log)));
+
+        await PostAsync(app, "/api/orders/fail/bug");
+
+        var entry = Assert.Single(log.Entries, entry => entry.Category == typeof(ProblemDetailsExceptionHandler).FullName);
+        Assert.Equal((LogLevel.Error, true), (entry.Level, entry.HasException));
+    }
+
+    [Fact]
+    public async Task AMalformedIfMatchIsNotEchoedInTheProblem()
+    {
+        await using var app = await TestApp.StartAsync();
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/orders/{Guid.NewGuid()}/cancel");
+        request.Headers.TryAddWithoutValidation("If-Match", "\"zebra-4711\"");
+
+        var response = await app.GetTestClient().SendAsync(request, TestContext.Current.CancellationToken);
+        var text = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.DoesNotContain("zebra-4711", text, StringComparison.Ordinal);
+        Assert.Contains("If-Match must be one strong version tag", text, StringComparison.Ordinal);
     }
 
     [Fact]
