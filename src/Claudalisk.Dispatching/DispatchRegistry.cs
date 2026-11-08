@@ -18,6 +18,7 @@ internal sealed class DispatchRegistry
         var modules = catalogs.SelectMany(catalog => catalog.Modules).ToArray();
         var scanned = descriptors.Select(descriptor => descriptor.ImplementationInstance).OfType<DispatchingState>().SelectMany(state => state.Scanned).ToHashSet();
 
+        var registered = descriptors.Select(descriptor => (descriptor.ServiceType, descriptor.ImplementationType)).ToHashSet();
         var validators = new Dictionary<Type, List<Type>>();
         foreach (var assembly in modules.Select(module => module.Assembly).Distinct().Where(assembly => !scanned.Contains(assembly)))
         {
@@ -32,7 +33,7 @@ internal sealed class DispatchRegistry
                 foreach (var contract in type.GetInterfaces().Where(contract => contract.IsGenericType))
                 {
                     var definition = contract.GetGenericTypeDefinition();
-                    if (descriptors.Any(descriptor => descriptor.ServiceType == contract && descriptor.ImplementationType == type))
+                    if (registered.Contains((contract, type)))
                     {
                         continue;
                     }
