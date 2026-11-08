@@ -111,6 +111,122 @@ public sealed class MigrationBaselineTests
         Assert.Single(services, descriptor => descriptor.ImplementationInstance is MigrationBaseline);
     }
 
+    [Fact]
+    public async Task AdoptingWhileAnotherHostHoldsTheLockReadsTheHistoryAgainAfterTheLockIsFree()
+    {
+        var database = await TransitionalDatabaseAsync(Replaced);
+        await using var holder = new NpgsqlConnection(database);
+        await holder.OpenAsync(TestContext.Current.CancellationToken);
+        await using var transaction = await holder.BeginTransactionAsync(TestContext.Current.CancellationToken);
+        await using (var lockCommand = new NpgsqlCommand($"SELECT pg_advisory_xact_lock({MigrationBaselines.AdvisoryLockKey})", holder, transaction))
+        {
+            await lockCommand.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        }
+
+        var adopting = MigrateWithBaselineAsync(database);
+        while (await ScalarLongAsync(database, "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND wait_event = 'advisory'") == 0)
+        {
+            Assert.False(adopting.IsCompleted, "Adoption finished without waiting for the lock.");
+            await Task.Yield();
+        }
+
+        foreach (var migration in Replaced)
+        {
+            await using var delete = new NpgsqlCommand($"DELETE FROM orders.\"__EFMigrationsHistory\" WHERE migration_id = '{migration}'", holder, transaction);
+            await delete.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        }
+
+        await using (var insert = new NpgsqlCommand($"INSERT INTO orders.\"__EFMigrationsHistory\" (migration_id, product_version) VALUES ('{Baseline}', '10.0.0')", holder, transaction))
+        {
+            await insert.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        }
+
+        await transaction.CommitAsync(TestContext.Current.CancellationToken);
+        await adopting;
+
+        Assert.Equal([Baseline], await HistoryAsync(database, OrdersDbContext.Schema));
+    }
+
+    [Fact]
+    public async Task TwoHostsAdoptingTheSameBaselineConcurrentlyBothSucceed()
+    {
+        var database = await TransitionalDatabaseAsync(Replaced);
+
+        await Task.WhenAll(Enumerable.Range(0, 4).Select(_ => Task.Run(() => MigrateWithBaselineAsync(database), TestContext.Current.CancellationToken)));
+
+        Assert.Equal([Baseline], await HistoryAsync(database, OrdersDbContext.Schema));
+    }
+
+    [Fact]
+    public async Task MigratingInsideAUnitOfWorkIsRefusedBeforeAnythingChanges()
+    {
+        var database = await TransitionalDatabaseAsync(Replaced);
+        await using var app = PostgresServer.CreateApp(database, services => services.AddMigrationBaseline(OrdersDbContext.Schema, Baseline, Replaced));
+        await using var scope = app.CreateAsyncScope();
+        var initializer = scope.ServiceProvider.GetRequiredService<DatabaseInitializer>();
+
+        var refused = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => scope.ServiceProvider.GetRequiredService<IUnitOfWork>().RunAsync(
+                token => initializer.MigrateAsync(token), TestContext.Current.CancellationToken));
+
+        Assert.Contains("cannot run inside a unit of work", refused.Message);
+        Assert.Equal(Replaced, await HistoryAsync(database, OrdersDbContext.Schema));
+    }
+
+    [Fact]
+    public async Task ARecordedBaselineWithAReplacedMigrationStillInTheHistoryIsRefused()
+    {
+        var database = await TransitionalDatabaseAsync([Baseline, Replaced[0]]);
+
+        var refused = await Assert.ThrowsAsync<MigrationBaselineException>(() => MigrateWithBaselineAsync(database));
+
+        Assert.Contains($"Replaced: {Replaced[0]}", refused.Message);
+        Assert.Equal([Replaced[0], Baseline], await HistoryAsync(database, OrdersDbContext.Schema));
+    }
+
+    [Fact]
+    public async Task AMigrationAddedAfterTheBaselineDoesNotRefuseARecordedBaseline()
+    {
+        var database = await TransitionalDatabaseAsync([Baseline, "20261201000000_Later"]);
+
+        await MigrateWithBaselineAsync(database);
+
+        Assert.Equal([Baseline, "20261201000000_Later"], await HistoryAsync(database, OrdersDbContext.Schema));
+    }
+
+    [Fact]
+    public async Task TablesTheMigratingRoleCannotSeeStillCountAsTables()
+    {
+        var database = await PostgresServer.CreateEmptyDatabaseAsync();
+        var role = $"baseline_{Guid.NewGuid():N}";
+        var name = new NpgsqlConnectionStringBuilder(database).Database;
+        await ExecuteAsync(database, $"CREATE SCHEMA orders; CREATE TABLE orders.orders (id uuid PRIMARY KEY); CREATE ROLE {role} LOGIN PASSWORD 'pw'; GRANT CONNECT ON DATABASE \"{name}\" TO {role}; GRANT USAGE, CREATE ON SCHEMA orders TO {role}");
+        var limited = new NpgsqlConnectionStringBuilder(database) { Username = role, Password = "pw" }.ConnectionString;
+
+        var refused = await Assert.ThrowsAsync<MigrationBaselineException>(() => MigrateWithBaselineAsync(limited));
+
+        Assert.Contains("has tables but no migration history", refused.Message);
+    }
+
+    [Fact]
+    public void ABaselineRejectsDuplicateReplacedMigrationsAndReplacingItself()
+    {
+        var services = new ServiceCollection();
+
+        Assert.Throws<ArgumentException>(() => services.AddMigrationBaseline("orders", Baseline, [Replaced[0], Replaced[0]]));
+        Assert.Throws<ArgumentException>(() => services.AddMigrationBaseline("orders", Baseline, [Replaced[0], Baseline]));
+        Assert.Empty(services);
+    }
+
+    [Theory]
+    [InlineData("Orders")]
+    [InlineData("or ders")]
+    [InlineData("orders\"; DROP SCHEMA x")]
+    public void ABaselineSchemaMustBeALowerCaseIdentifier(string schema)
+    {
+        Assert.Throws<ArgumentException>(() => new ServiceCollection().AddMigrationBaseline(schema, Baseline, Replaced));
+    }
+
     private static async Task MigrateWithBaselineAsync(string database)
     {
         await using var app = PostgresServer.CreateApp(database, services => services
@@ -153,6 +269,14 @@ public sealed class MigrationBaselineTests
         }
 
         return rows;
+    }
+
+    private static async Task<long> ScalarLongAsync(string database, string sql)
+    {
+        await using var connection = new NpgsqlConnection(database);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(sql, connection);
+        return (long)(await command.ExecuteScalarAsync())!;
     }
 
     private static async Task<string> ScalarAsync(string database, string sql)

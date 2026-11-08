@@ -44,11 +44,22 @@ public static class PersistenceServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentException.ThrowIfNullOrWhiteSpace(schema);
+        MigrationHistoryMoves.Quote(schema);
         ArgumentException.ThrowIfNullOrWhiteSpace(migration);
         ArgumentNullException.ThrowIfNull(replaces);
         if (replaces.Count == 0)
         {
             throw new ArgumentException("A baseline replaces at least one migration.", nameof(replaces));
+        }
+
+        if (replaces.Distinct(StringComparer.Ordinal).Count() != replaces.Count)
+        {
+            throw new ArgumentException("A baseline lists each migration it replaces once.", nameof(replaces));
+        }
+
+        if (replaces.Contains(migration, StringComparer.Ordinal))
+        {
+            throw new ArgumentException("A baseline cannot replace itself.", nameof(replaces));
         }
 
         var existing = Registered<MigrationBaseline>(services).SingleOrDefault(baseline => baseline.Schema == schema);

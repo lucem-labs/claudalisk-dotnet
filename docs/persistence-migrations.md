@@ -35,7 +35,7 @@ Code that reads or writes a history takes the table and column names from EF Cor
 - resolve `IHistoryRepository` from a context configured like the one that wrote the history;
 - use its `ExistsAsync`, `GetAppliedMigrationsAsync`, `GetInsertScript` and `GetDeleteScript`.
 
-`MigrationBaselines` does this. It reads every history before it writes any, outside the transaction. Npgsql's `ExistsAsync` detects a missing table by catching a failed query, and inside a transaction that failure would abort it. So call `DatabaseInitializer.MigrateAsync` outside any unit of work.
+`MigrationBaselines` reads histories this way. It runs in one unit of work: it takes a transaction-scoped advisory lock, so concurrent hosts adopt one at a time, and then reads every history before it writes any. It checks that a history table exists with `to_regclass`, because Npgsql's `ExistsAsync` detects a missing table by catching a failed query, which would abort the transaction. `DatabaseInitializer.MigrateAsync` refuses to run inside a unit of work.
 
 `MigrationBaselines` reads histories through `UseModuleSchema`, so it handles only module histories, with snake_case columns. A baseline replaces a module's own migrations, never a shared context's.
 
@@ -79,10 +79,10 @@ services.AddMigrationBaseline(
 | the schema's history | what happens |
 |---|---|
 | holds exactly the replaced migrations | the baseline is recorded in their place; no table or row changes |
-| already records the baseline | nothing |
+| already records the baseline | nothing, unless it still records a migration the baseline replaces: refused |
 | does not exist or is empty, and the schema has no tables | nothing; the migrate step applies the baseline |
 | misses a replaced migration, or holds one that is not listed | refused, with the missing and unknown ids |
-| does not exist or is empty, but the schema has tables | refused |
+| does not exist or is empty, but the schema has tables (counted from the catalog, whatever the role may see) | refused |
 
 Every schema that adopts a baseline does so in one transaction, so a refusal in one schema changes no other.
 

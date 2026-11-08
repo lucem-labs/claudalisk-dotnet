@@ -9,6 +9,12 @@ public sealed class DatabaseInitializer(IServiceProvider services, IEnumerable<M
 
     public async Task MigrateAsync(CancellationToken cancellationToken)
     {
+        if (services.GetRequiredService<IScopeConnection>().Transaction is not null)
+        {
+            throw new InvalidOperationException(
+                "DatabaseInitializer.MigrateAsync cannot run inside a unit of work, because migrations manage their own transactions. Call it outside IUnitOfWork.RunAsync.");
+        }
+
         await services.GetRequiredService<MigrationHistoryMoves>().MoveAsync(cancellationToken);
         await services.GetRequiredService<MigrationBaselines>().AdoptAsync(cancellationToken);
         foreach (var registration in Contexts)
