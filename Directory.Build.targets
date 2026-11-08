@@ -13,6 +13,7 @@
 
   <PropertyGroup Condition="'$(IsPackable)' == 'true'">
     <PackageIcon>icon.png</PackageIcon>
+    <EnablePackageValidation>true</EnablePackageValidation>
   </PropertyGroup>
 
   <ItemGroup Condition="'$(IsPackable)' == 'true'">

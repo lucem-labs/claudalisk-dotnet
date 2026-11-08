@@ -5,6 +5,14 @@ namespace Claudalisk.Ci.Tests;
 
 public sealed class PackageReadmeTests
 {
+    [Fact(Timeout = 120_000)]
+    public async Task EveryPackageRunsPackageValidation()
+    {
+        using var evaluation = await EvaluatePackWiringAsync("EnablePackageValidation", TestContext.Current.CancellationToken);
+
+        Assert.Equal("true", evaluation.RootElement.GetProperty("Properties").GetProperty("EnablePackageValidation").GetString());
+    }
+
     [Fact]
     public void EveryPackableProjectHasAReadmeNextToItsProject()
     {
