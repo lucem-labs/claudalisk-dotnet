@@ -95,6 +95,22 @@ public sealed class MigrationBaselineTests
         Assert.Single(services, descriptor => descriptor.ImplementationInstance is MigrationBaseline);
     }
 
+    [Fact]
+    public void ASecondBaselineForASchemaWithAnotherMigrationOrReplacedListIsRejected()
+    {
+        var services = new ServiceCollection().AddMigrationBaseline("orders", Baseline, Replaced);
+
+        var otherMigration = Assert.Throws<InvalidOperationException>(
+            () => services.AddMigrationBaseline("orders", "20261102000000_OrdersBaseline", Replaced));
+        var otherList = Assert.Throws<InvalidOperationException>(
+            () => services.AddMigrationBaseline("orders", Baseline, [.. Replaced, "20261028000000_Extra"]));
+
+        Assert.Contains(Baseline, otherMigration.Message);
+        Assert.Contains("20261102000000_OrdersBaseline", otherMigration.Message);
+        Assert.Contains("20261028000000_Extra", otherList.Message);
+        Assert.Single(services, descriptor => descriptor.ImplementationInstance is MigrationBaseline);
+    }
+
     private static async Task MigrateWithBaselineAsync(string database)
     {
         await using var app = PostgresServer.CreateApp(database, services => services
