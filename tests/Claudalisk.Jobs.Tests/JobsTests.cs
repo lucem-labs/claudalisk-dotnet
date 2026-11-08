@@ -244,7 +244,7 @@ public sealed class JobsTests
     [Fact(Timeout = 60_000)]
     public async Task AJobWhoseRowWasRequeuedAsStaleAndClaimedAgainCommitsNoneOfItsWrites()
     {
-        await using var app = await PostgresServer.CreateAppAsync();
+        await using var app = await PostgresServer.CreateAppAsync(options => options.HeartbeatInterval = TimeSpan.FromHours(1));
         var orderId = Guid.NewGuid();
         await SendAsync<JobReference>(app, new PlaceOrderCommand(orderId, "A-1", FailAfterQueueing: false));
         var held = app.GetRequiredService<Signals>().Hold(orderId);
