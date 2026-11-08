@@ -28,4 +28,21 @@ internal sealed record HandlerRegistration(Type MessageType, Type ResultType, Ty
         IsUnregistered
             ? ActivatorUtilities.CreateInstance(scope, ImplementationType!)
             : scope.GetRequiredService(ServiceType);
+
+    public async Task<object?> InvokeAsync(
+        IServiceProvider scope, Func<object, object, CancellationToken, Task<object?>> invoke, object message, CancellationToken cancellationToken)
+    {
+        var handler = Resolve(scope);
+        try
+        {
+            return await invoke(handler, message, cancellationToken);
+        }
+        finally
+        {
+            if (IsUnregistered)
+            {
+                await Disposal.DisposeAsync(handler);
+            }
+        }
+    }
 }

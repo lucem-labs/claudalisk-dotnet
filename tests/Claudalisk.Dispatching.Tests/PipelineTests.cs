@@ -148,6 +148,17 @@ public sealed class PipelineTests
         Assert.Equal(["name"], error.Errors.Keys);
     }
 
+    [Fact]
+    public async Task ALateModulesHandlerAndValidatorAreDisposedWhenTheSendCompletes()
+    {
+        await using var app = await PostgresServer.CreateAppAsync(services =>
+            services.AddModules(new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build(), new LateModule.LateModule()));
+
+        await SendAsync<string>(app, new LateModule.LateDisposableCommand("late"));
+
+        Assert.Equal(["handler", "validator"], app.GetRequiredService<LateModule.LateLog>().Disposed.Order(StringComparer.Ordinal));
+    }
+
     private static void Prepend(IServiceCollection services)
     {
         services.Insert(0, ServiceDescriptor.Scoped<IPipelineStep, AfterUnitOfWorkStep>());

@@ -9,22 +9,33 @@ internal sealed class ValidationStep(IServiceProvider scope) : IPipelineStep
 
     public async Task<object?> InvokeAsync(MessageContext context, Func<CancellationToken, Task<object?>> next, CancellationToken cancellationToken)
     {
-        var validators = scope.GetServices(typeof(IValidator<>).MakeGenericType(context.MessageType)).OfType<IValidator>()
-            .Concat(scope.GetRequiredService<DispatchRegistry>().UnregisteredValidatorsFor(context.MessageType).Select(type => (IValidator)ActivatorUtilities.CreateInstance(scope, type)))
+        var created = scope.GetRequiredService<DispatchRegistry>().UnregisteredValidatorsFor(context.MessageType)
+            .Select(type => (IValidator)ActivatorUtilities.CreateInstance(scope, type))
             .ToArray();
         var errors = new Dictionary<string, List<string>>(StringComparer.Ordinal);
-        foreach (var validator in validators)
+        try
         {
-            var result = await validator.ValidateAsync(new ValidationContext<object>(context.Message), cancellationToken);
-            foreach (var failure in result.Errors)
+            var validators = scope.GetServices(typeof(IValidator<>).MakeGenericType(context.MessageType)).OfType<IValidator>().Concat(created);
+            foreach (var validator in validators)
             {
-                var key = CamelCase(failure.PropertyName);
-                if (!errors.TryGetValue(key, out var messages))
+                var result = await validator.ValidateAsync(new ValidationContext<object>(context.Message), cancellationToken);
+                foreach (var failure in result.Errors)
                 {
-                    errors[key] = messages = [];
-                }
+                    var key = CamelCase(failure.PropertyName);
+                    if (!errors.TryGetValue(key, out var messages))
+                    {
+                        errors[key] = messages = [];
+                    }
 
-                messages.Add(failure.ErrorMessage);
+                    messages.Add(failure.ErrorMessage);
+                }
+            }
+        }
+        finally
+        {
+            foreach (var validator in created)
+            {
+                await Disposal.DisposeAsync(validator);
             }
         }
 

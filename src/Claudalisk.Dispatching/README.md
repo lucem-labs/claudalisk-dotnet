@@ -57,7 +57,7 @@ Validation is by exact type: only the `IValidator<T>` registered for the message
 
 A pipeline step with `Order` equal to `PipelineOrder.Retry` is rejected when the hosted startup check or `ValidateDispatching` runs, and again when a scope's dispatcher is created. The registry itself never constructs steps.
 
-The registry reads the service collection once, when the provider first builds it, and keeps no reference to the collection afterwards. A handler or validator in a module assembly that was added to the catalog after `AddDispatching` is found at that moment and created per send with `ActivatorUtilities`, so it is not disposed with the scope.
+The registry reads the service collection once, when the provider first builds it, and keeps no reference to the collection afterwards. A handler or validator in a module assembly that was added to the catalog after `AddDispatching` is found at that moment and created per send with `ActivatorUtilities`. It is disposed (`IAsyncDisposable` first, else `IDisposable`) when the send, or the validation, completes.
 
 ## Logging
 

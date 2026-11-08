@@ -66,7 +66,7 @@ internal sealed partial class Dispatcher : IDispatcher
                 return await Run(context, outer, token => AttemptsAsync(context, handler, invoke, token), cancellationToken);
             }
 
-            return await Run(context, _steps, token => invoke(handler.Resolve(_scope), message, token), cancellationToken);
+            return await Run(context, _steps, token => handler.InvokeAsync(_scope, invoke, message, token), cancellationToken);
         }
         finally
         {
@@ -106,7 +106,7 @@ internal sealed partial class Dispatcher : IDispatcher
                 var inner = attemptScope.ServiceProvider.GetServices<IPipelineStep>()
                     .Where(step => step.Order > PipelineOrder.Retry)
                     .OrderBy(step => step.Order);
-                return await Run(context, inner, token => invoke(handler.Resolve(attemptScope.ServiceProvider), context.Message, token), cancellationToken);
+                return await Run(context, inner, token => handler.InvokeAsync(attemptScope.ServiceProvider, invoke, context.Message, token), cancellationToken);
             }
             catch (ConcurrencyConflictException) when (attempt < _options.ConcurrencyAttempts && !cancellationToken.IsCancellationRequested)
             {

@@ -12,6 +12,26 @@ public sealed record LateCommand(string Name);
 public sealed class LateLog
 {
     public List<string> Handled { get; } = [];
+
+    public List<string> Disposed { get; } = [];
+}
+
+public sealed record LateDisposableCommand(string Name);
+
+internal sealed class LateDisposableHandler(LateLog log) : IHandler<LateDisposableCommand, string>, IAsyncDisposable
+{
+    public Task<string> HandleAsync(LateDisposableCommand message, CancellationToken cancellationToken) => Task.FromResult(message.Name);
+
+    public ValueTask DisposeAsync()
+    {
+        log.Disposed.Add("handler");
+        return ValueTask.CompletedTask;
+    }
+}
+
+internal sealed class LateDisposableCommandValidator(LateLog log) : AbstractValidator<LateDisposableCommand>, IDisposable
+{
+    public void Dispose() => log.Disposed.Add("validator");
 }
 
 internal sealed class LateHandler(LateLog log) : IHandler<LateCommand, string>
