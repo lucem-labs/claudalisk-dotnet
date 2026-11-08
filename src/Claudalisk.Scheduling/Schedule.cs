@@ -1,12 +1,11 @@
 using System.Text.Json;
+using Claudalisk.Jobs;
 using Cronos;
 
 namespace Claudalisk.Scheduling;
 
 internal sealed record Schedule(string Name, CronExpression Cron, TimeZoneInfo TimeZone, SchedulableCommand Command, object Message)
 {
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
-
     public Func<CronExpression, DateTime, TimeZoneInfo, DateTime?> Occurrence { get; init; } =
         static (cron, after, zone) => cron.GetNextOccurrence(after, zone);
 
@@ -103,7 +102,7 @@ internal sealed record Schedule(string Name, CronExpression Cron, TimeZoneInfo T
             {
                 try
                 {
-                    message = JsonSerializer.Deserialize(string.IsNullOrWhiteSpace(configured.Arguments) ? "{}" : configured.Arguments, command.CommandType, Json);
+                    message = JsonSerializer.Deserialize(string.IsNullOrWhiteSpace(configured.Arguments) ? "{}" : configured.Arguments, command.CommandType, JobQueue.Json);
                 }
                 catch (JsonException exception)
                 {
