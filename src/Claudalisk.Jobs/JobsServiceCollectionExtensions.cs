@@ -14,7 +14,19 @@ public static class JobsServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configure);
         var registry = Registry(services);
+        if (registry.Find(module) is { LibraryOwned: true } owned)
+        {
+            throw new InvalidOperationException($"The jobs module name '{owned.Name}' is reserved by a library. Rename that jobs module.");
+        }
+
         configure(new ModuleJobsBuilder(registry.GetOrAdd(module, schema), services, registry));
+        return services;
+    }
+
+    internal static IServiceCollection AddLibraryJobs(this IServiceCollection services, string module, string schema, Action<ModuleJobsBuilder> configure)
+    {
+        var registry = Registry(services);
+        configure(new ModuleJobsBuilder(registry.GetOrAdd(module, schema), services, registry).LibraryOwned());
         return services;
     }
 

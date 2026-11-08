@@ -85,6 +85,17 @@ public sealed class StartupTests
     }
 
     [Fact]
+    public void AJobsModuleWithTheSchedulersNameFailsAddModuleJobsAfterAddScheduling()
+    {
+        var services = new ServiceCollection();
+        services.AddScheduling(new ConfigurationBuilder().Build());
+
+        var failure = Assert.Throws<InvalidOperationException>(() => services.AddModuleJobs("Scheduling", "app_scheduling", _ => { }));
+
+        Assert.Contains("'Scheduling' is reserved", failure.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task SchedulingWithoutJobsFailsStartupNamingWhatIsMissing()
     {
         var services = new ServiceCollection();

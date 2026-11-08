@@ -57,7 +57,7 @@ public static class SchedulingServiceCollectionExtensions
                 $"The jobs module name '{SchedulingJobs.Name}' is reserved for the scheduler, but AddModuleJobs already registered a jobs module with that name. Rename that jobs module.");
         }
 
-        services.AddModuleJobs(SchedulingJobs.Name, SchedulingJobs.Schema, jobs => configure(jobs.LibraryOwned()));
+        services.AddLibraryJobs(SchedulingJobs.Name, SchedulingJobs.Schema, configure);
     }
 
     private static SchedulableCommands Commands(IServiceCollection services)
