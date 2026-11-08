@@ -11,6 +11,14 @@
     <None Include="README.md" Pack="true" PackagePath="/" />
   </ItemGroup>
 
+  <PropertyGroup Condition="'$(IsPackable)' == 'true'">
+    <PackageIcon>icon.png</PackageIcon>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(IsPackable)' == 'true'">
+    <None Include="$(MSBuildThisFileDirectory)assets/icon.png" Pack="true" PackagePath="/" Visible="false" />
+  </ItemGroup>
+
   <Target Name="RefuseEmptyPackage" BeforeTargets="Pack" Condition="'$(IsPackable)' == 'true'">
     <Error Condition="'@(PackageSourceFile)' == ''" Code="CLAUDALISK0001" Text="$(MSBuildProjectName) is packable but has no source files. Make a package packable only once it has content." />
   </Target>
