@@ -80,6 +80,7 @@ internal static class TestApp
     private const string TemplateDatabase = "scheduling_template";
 
     private static readonly Lazy<Task<string>> Server = new(StartAsync);
+    private static PostgreSqlContainer? _container;
 
     public static DateTimeOffset Start { get; } = new(2026, 10, 26, 10, 30, 0, TimeSpan.Zero);
 
@@ -151,11 +152,14 @@ internal static class TestApp
         }
     }
 
+    public static ValueTask DisposeContainerAsync() =>
+        Interlocked.Exchange(ref _container, null) is { } container ? container.DisposeAsync() : ValueTask.CompletedTask;
+
     private static async Task<string> StartAsync()
     {
         var container = new PostgreSqlBuilder(Image).Build();
+        _container = container;
         await StartOrExplainAsync(() => container.StartAsync());
-        AppDomain.CurrentDomain.ProcessExit += (_, _) => container.DisposeAsync().AsTask().GetAwaiter().GetResult();
 
         var admin = container.GetConnectionString();
         await ExecuteAsync(admin, $"CREATE DATABASE \"{TemplateDatabase}\"");
