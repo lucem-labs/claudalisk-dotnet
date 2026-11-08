@@ -3,6 +3,14 @@
     <PackageSourceFile Include="@(Compile)" Exclude="$(BaseIntermediateOutputPath)**;$(BaseOutputPath)**" />
   </ItemGroup>
 
+  <PropertyGroup Condition="'$(IsPackable)' == 'true' And Exists('$(MSBuildProjectDirectory)/README.md')">
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(IsPackable)' == 'true' And Exists('$(MSBuildProjectDirectory)/README.md')">
+    <None Include="README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
   <Target Name="RefuseEmptyPackage" BeforeTargets="Pack" Condition="'$(IsPackable)' == 'true'">
     <Error Condition="'@(PackageSourceFile)' == ''" Code="CLAUDALISK0001" Text="$(MSBuildProjectName) is packable but has no source files. Make a package packable only once it has content." />
   </Target>
