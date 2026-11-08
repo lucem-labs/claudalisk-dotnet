@@ -19,6 +19,8 @@ internal static class PostgresServer
 
     public static Task<string> CreateEmptyDatabaseAsync() => CreateDatabaseAsync("template0");
 
+    public static Task<string> CreateMigratedDatabaseAsync() => CreateDatabaseAsync(TemplateDatabase);
+
     public static ServiceProvider CreateApp(string connectionString, Action<IServiceCollection>? configure = null) => Build(connectionString, configure);
 
     public static async Task StartOrExplainAsync(Func<Task> start)

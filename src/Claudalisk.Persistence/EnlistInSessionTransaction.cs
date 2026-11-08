@@ -2,6 +2,7 @@ using System.Data.Common;
 using System.Runtime.ExceptionServices;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
 using Npgsql;
 
@@ -50,6 +51,7 @@ internal sealed class EnlistInSessionTransaction(DbSession session) : SaveChange
             return;
         }
 
+        ModuleContextGuard.Check(context.GetService<IDbContextOptions>());
         var current = context.Database.CurrentTransaction?.GetDbTransaction();
         if (session.Transaction is null)
         {

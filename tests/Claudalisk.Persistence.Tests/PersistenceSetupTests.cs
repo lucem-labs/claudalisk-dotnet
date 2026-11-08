@@ -93,6 +93,63 @@ public sealed class PersistenceSetupTests
     }
 
     [Fact]
+    public async Task AModuleContextThatRetriesOnFailureFailsOnItsFirstCommandWhenTheServiceProviderIsCached()
+    {
+        var connectionString = await PostgresServer.CreateMigratedDatabaseAsync();
+        BuildPlainBillingContextModel(connectionString);
+        var services = new ServiceCollection()
+            .AddPersistence(connectionString)
+            .AddDbContext<BillingDbContext>((provider, options) => options
+                .UseModuleSchema(provider, BillingDbContext.Schema)
+                .UseNpgsql(npgsql => npgsql.EnableRetryOnFailure()));
+        await using var app = services.BuildServiceProvider();
+        await using var scope = app.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+        _ = db.Model;
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => db.Charges.CountAsync(TestContext.Current.CancellationToken));
+
+        Assert.Contains("EnableRetryOnFailure", error.Message);
+    }
+
+    [Fact]
+    public async Task APooledModuleContextFailsOnItsFirstSaveWhenTheServiceProviderIsCached()
+    {
+        var connectionString = await PostgresServer.CreateMigratedDatabaseAsync();
+        BuildPlainBillingContextModel(connectionString);
+        var services = new ServiceCollection()
+            .AddPersistence(connectionString)
+            .AddDbContextPool<BillingDbContext>((provider, options) => options.UseModuleSchema(provider, BillingDbContext.Schema));
+        await using var app = services.BuildServiceProvider();
+        await using var scope = app.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+        _ = db.Model;
+        db.Charges.Add(new Charge { Id = Guid.NewGuid(), OrderId = Guid.NewGuid(), Amount = 1 });
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => db.SaveChangesAsync(TestContext.Current.CancellationToken));
+
+        Assert.Contains("AddDbContextPool", error.Message);
+    }
+
+    [Fact]
+    public async Task APooledModuleContextFailsOnItsFirstRawSqlCommandWhenTheServiceProviderIsCached()
+    {
+        var connectionString = await PostgresServer.CreateMigratedDatabaseAsync();
+        BuildPlainBillingContextModel(connectionString);
+        var services = new ServiceCollection()
+            .AddPersistence(connectionString)
+            .AddDbContextPool<BillingDbContext>((provider, options) => options.UseModuleSchema(provider, BillingDbContext.Schema));
+        await using var app = services.BuildServiceProvider();
+        await using var scope = app.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => db.Database.ExecuteSqlRawAsync("DELETE FROM billing.charges", TestContext.Current.CancellationToken));
+
+        Assert.Contains("AddDbContextPool", error.Message);
+    }
+
+    [Fact]
     public async Task WithoutDockerTheTestsFailAndSayDockerIsNeeded()
     {
         var unreachable = new InvalidOperationException("Docker is either not running or misconfigured.");
@@ -102,5 +159,15 @@ public sealed class PersistenceSetupTests
 
         Assert.StartsWith("The database tests need Docker", failure.Message);
         Assert.Same(unreachable, failure.InnerException);
+    }
+
+    private static void BuildPlainBillingContextModel(string connectionString)
+    {
+        using var app = new ServiceCollection()
+            .AddPersistence(connectionString)
+            .AddModuleDbContext<BillingDbContext>(BillingDbContext.Schema)
+            .BuildServiceProvider();
+        using var scope = app.CreateScope();
+        _ = scope.ServiceProvider.GetRequiredService<BillingDbContext>().Model;
     }
 }

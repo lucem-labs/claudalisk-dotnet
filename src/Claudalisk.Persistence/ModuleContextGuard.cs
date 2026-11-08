@@ -19,7 +19,9 @@ internal sealed class ModuleContextGuard(string schema) : IDbContextOptionsExten
     {
     }
 
-    public void Validate(IDbContextOptions options)
+    public void Validate(IDbContextOptions options) => Check(options);
+
+    public static void Check(IDbContextOptions options)
     {
         if (options.FindExtension<CoreOptionsExtension>()?.MaxPoolSize is not null)
         {
