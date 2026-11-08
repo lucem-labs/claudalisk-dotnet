@@ -68,6 +68,8 @@ public static class JobsRouter
 
     public static JobResponse Represent(JobsModule module, JobRecord job)
     {
+        ArgumentNullException.ThrowIfNull(module);
+        ArgumentNullException.ThrowIfNull(job);
         var self = $"/api/jobs/{module.Segment}/{job.Id}";
         return new JobResponse(
             job.Id,

@@ -197,15 +197,21 @@ public sealed class JobsRegistry
 
     public IReadOnlyList<EventSubscription> Subscriptions => _subscriptions;
 
-    public JobsModule? Find(string nameOrSegment) =>
-        _modules.TryGetValue(nameOrSegment, out var module)
+    public JobsModule? Find(string nameOrSegment)
+    {
+        ArgumentNullException.ThrowIfNull(nameOrSegment);
+        return _modules.TryGetValue(nameOrSegment, out var module)
             ? module
             : _modules.Values.FirstOrDefault(candidate => string.Equals(candidate.Segment, nameOrSegment, StringComparison.OrdinalIgnoreCase));
+    }
 
-    public JobsModule ModuleFor(Type payloadType) =>
-        _modules.Values.FirstOrDefault(module => !module.LibraryOwned && module.KindFor(payloadType) is not null)
-        ?? throw new InvalidOperationException(
-            $"No module registers '{payloadType.FullName}' as a job. Register it with AddModuleJobs(...).Command<{payloadType.Name}>(\"<kind>\").");
+    public JobsModule ModuleFor(Type payloadType)
+    {
+        ArgumentNullException.ThrowIfNull(payloadType);
+        return _modules.Values.FirstOrDefault(module => !module.LibraryOwned && module.KindFor(payloadType) is not null)
+            ?? throw new InvalidOperationException(
+                $"No module registers '{payloadType.FullName}' as a job. Register it with AddModuleJobs(...).Command<{payloadType.Name}>(\"<kind>\").");
+    }
 
     internal object? Map(object domainEvent) =>
         _mappings.TryGetValue(domainEvent.GetType(), out var map) ? map(domainEvent) : null;
