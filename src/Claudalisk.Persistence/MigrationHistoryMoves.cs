@@ -31,7 +31,7 @@ public sealed partial class MigrationHistoryMoves(IServiceProvider services)
 
     private readonly MovedMigrationHistory[] moves = services.GetServices<MovedMigrationHistory>().ToArray();
 
-    public async Task MoveAsync(CancellationToken cancellationToken)
+    public async Task MoveAsync(CancellationToken cancellationToken = default)
     {
         if (moves.Length == 0)
         {

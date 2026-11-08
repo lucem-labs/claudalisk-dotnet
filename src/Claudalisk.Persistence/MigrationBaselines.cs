@@ -34,7 +34,7 @@ public sealed partial class MigrationBaselines(IServiceProvider services)
 
     internal const long AdvisoryLockKey = 7370120260101;
 
-    public async Task AdoptAsync(CancellationToken cancellationToken)
+    public async Task AdoptAsync(CancellationToken cancellationToken = default)
     {
         if (baselines.Length == 0)
         {

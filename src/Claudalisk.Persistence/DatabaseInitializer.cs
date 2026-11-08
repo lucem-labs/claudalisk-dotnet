@@ -7,7 +7,7 @@ public sealed class DatabaseInitializer(IServiceProvider services, IEnumerable<M
 {
     public IReadOnlyList<ModuleDbContextRegistration> Contexts { get; } = registrations.ToArray();
 
-    public async Task MigrateAsync(CancellationToken cancellationToken)
+    public async Task MigrateAsync(CancellationToken cancellationToken = default)
     {
         if (services.GetRequiredService<IScopeConnection>().Transaction is not null)
         {
@@ -23,7 +23,7 @@ public sealed class DatabaseInitializer(IServiceProvider services, IEnumerable<M
         }
     }
 
-    public async Task<IReadOnlyList<string>> GetPendingMigrationsAsync(CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<string>> GetPendingMigrationsAsync(CancellationToken cancellationToken = default)
     {
         var pending = new List<string>();
         foreach (var registration in Contexts)
