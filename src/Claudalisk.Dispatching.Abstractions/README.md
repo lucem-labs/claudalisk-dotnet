@@ -9,7 +9,7 @@ A message is a class whose name ends in `Command` or `Query`. `MessageContext.Ki
 ```csharp
 public sealed class ShipOrderHandler : IHandler<ShipOrderCommand, ShippedOrder>
 {
-    public Task<ShippedOrder> HandleAsync(ShipOrderCommand message, CancellationToken cancellationToken) { ... }
+    public ValueTask<ShippedOrder> HandleAsync(ShipOrderCommand message, CancellationToken cancellationToken) { ... }
 }
 ```
 

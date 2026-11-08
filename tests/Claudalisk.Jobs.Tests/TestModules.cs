@@ -181,7 +181,7 @@ public sealed class Signals
 
 internal sealed class PlaceOrderHandler(OrdersDbContext db, IJobQueue jobs) : IHandler<PlaceOrderCommand, JobReference>
 {
-    public async Task<JobReference> HandleAsync(PlaceOrderCommand message, CancellationToken cancellationToken)
+    public async ValueTask<JobReference> HandleAsync(PlaceOrderCommand message, CancellationToken cancellationToken)
     {
         db.Orders.Add(new OrderRow { Id = message.Id, Reference = message.Reference });
         await db.SaveChangesAsync(cancellationToken);
@@ -197,7 +197,7 @@ internal sealed class PlaceOrderHandler(OrdersDbContext db, IJobQueue jobs) : IH
 
 internal sealed class ShipOrderHandler(OrdersDbContext db, IJobContext job, Signals signals) : IHandler<ShipOrderCommand, Guid>
 {
-    public async Task<Guid> HandleAsync(ShipOrderCommand message, CancellationToken cancellationToken)
+    public async ValueTask<Guid> HandleAsync(ShipOrderCommand message, CancellationToken cancellationToken)
     {
         var order = await db.Orders.SingleAsync(row => row.Id == message.OrderId, cancellationToken);
         order.Shipped = true;
@@ -210,35 +210,35 @@ internal sealed class ShipOrderHandler(OrdersDbContext db, IJobContext job, Sign
 
 internal sealed class FlakyHandler(IJobContext job) : IHandler<FlakyCommand, int>
 {
-    public Task<int> HandleAsync(FlakyCommand message, CancellationToken cancellationToken) =>
+    public ValueTask<int> HandleAsync(FlakyCommand message, CancellationToken cancellationToken) =>
         job.Attempt <= message.FailedAttempts
             ? throw new InvalidOperationException($"Attempt {job.Attempt} failed.")
-            : Task.FromResult(job.Attempt);
+            : ValueTask.FromResult(job.Attempt);
 }
 
 internal sealed class StrictHandler : IHandler<StrictCommand, int>
 {
-    public Task<int> HandleAsync(StrictCommand message, CancellationToken cancellationToken) => Task.FromResult(1);
+    public ValueTask<int> HandleAsync(StrictCommand message, CancellationToken cancellationToken) => ValueTask.FromResult(1);
 }
 
 internal sealed class LimitedHandler : IHandler<LimitedCommand, int>
 {
-    public Task<int> HandleAsync(LimitedCommand message, CancellationToken cancellationToken) => throw new OrderLimitReached(message.Limit);
+    public ValueTask<int> HandleAsync(LimitedCommand message, CancellationToken cancellationToken) => throw new OrderLimitReached(message.Limit);
 }
 
 internal sealed class RefusedHandler : IHandler<RefusedCommand, int>
 {
-    public Task<int> HandleAsync(RefusedCommand message, CancellationToken cancellationToken) => throw new OrderRefused();
+    public ValueTask<int> HandleAsync(RefusedCommand message, CancellationToken cancellationToken) => throw new OrderRefused();
 }
 
 internal sealed class StaleHandler : IHandler<StaleCommand, int>
 {
-    public Task<int> HandleAsync(StaleCommand message, CancellationToken cancellationToken) => throw new StaleVersionException(2, 3);
+    public ValueTask<int> HandleAsync(StaleCommand message, CancellationToken cancellationToken) => throw new StaleVersionException(2, 3);
 }
 
 internal sealed class OutageHandler : IHandler<OutageCommand, int>
 {
-    public Task<int> HandleAsync(OutageCommand message, CancellationToken cancellationToken) =>
+    public ValueTask<int> HandleAsync(OutageCommand message, CancellationToken cancellationToken) =>
         throw new DependencyUnavailableException(
             "The carrier's API is down.",
             message.WaitMinutes > 0 ? TimeSpan.FromMinutes(message.WaitMinutes) : null);
@@ -266,7 +266,7 @@ internal sealed class RebuildRefundsCommandValidator : AbstractValidator<Rebuild
 
 internal sealed class WaitHandler(Signals signals, IJobContext job) : IHandler<WaitCommand, int>
 {
-    public async Task<int> HandleAsync(WaitCommand message, CancellationToken cancellationToken)
+    public async ValueTask<int> HandleAsync(WaitCommand message, CancellationToken cancellationToken)
     {
         await job.ReportProgressAsync(message.Progress, "waiting", cancellationToken);
         var (started, release) = signals.For(message.Key);
@@ -278,7 +278,7 @@ internal sealed class WaitHandler(Signals signals, IJobContext job) : IHandler<W
 
 internal sealed class CancelOrderHandler(OrdersDbContext db, IAggregateTracker tracker) : IHandler<CancelOrderCommand, Guid>
 {
-    public async Task<Guid> HandleAsync(CancelOrderCommand message, CancellationToken cancellationToken)
+    public async ValueTask<Guid> HandleAsync(CancelOrderCommand message, CancellationToken cancellationToken)
     {
         var row = await db.Orders.SingleAsync(order => order.Id == message.OrderId, cancellationToken);
         var order = new Order(row.Id, 1);

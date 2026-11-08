@@ -33,7 +33,7 @@ internal sealed partial class Dispatcher : IDispatcher
         _logger = scope.GetService<ILogger<IDispatcher>>() ?? NullLogger<IDispatcher>.Instance;
     }
 
-    public async Task<TResult> SendAsync<TResult>(object message, CancellationToken cancellationToken = default)
+    public async ValueTask<TResult> SendAsync<TResult>(object message, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(message);
         MessageContext.KindOf(message.GetType());
@@ -47,7 +47,7 @@ internal sealed partial class Dispatcher : IDispatcher
         return (TResult)(await SendAsync(message, cancellationToken))!;
     }
 
-    public async Task<object?> SendAsync(object message, CancellationToken cancellationToken = default)
+    public async ValueTask<object?> SendAsync(object message, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(message);
         var messageType = message.GetType();

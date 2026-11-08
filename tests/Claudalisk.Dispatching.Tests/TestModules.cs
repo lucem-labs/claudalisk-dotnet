@@ -73,7 +73,7 @@ internal sealed class RecordingStep(SendLog log) : IPipelineStep
 
 internal sealed class PlaceOrderHandler(OrdersDbContext db) : IHandler<PlaceOrderCommand, Guid>
 {
-    public async Task<Guid> HandleAsync(PlaceOrderCommand message, CancellationToken cancellationToken)
+    public async ValueTask<Guid> HandleAsync(PlaceOrderCommand message, CancellationToken cancellationToken)
     {
         db.Orders.Add(new Order { Id = message.Id, Reference = message.Reference });
         await db.SaveChangesAsync(cancellationToken);
@@ -88,12 +88,12 @@ internal sealed class PlaceOrderCommandValidator : AbstractValidator<PlaceOrderC
 
 internal sealed class CountOrdersHandler(OrdersDbContext db) : IHandler<CountOrdersQuery, int>
 {
-    public Task<int> HandleAsync(CountOrdersQuery message, CancellationToken cancellationToken) => db.Orders.CountAsync(cancellationToken);
+    public ValueTask<int> HandleAsync(CountOrdersQuery message, CancellationToken cancellationToken) => new(db.Orders.CountAsync(cancellationToken));
 }
 
 internal sealed class PeekOrdersHandler(OrdersDbContext db) : IHandler<PeekOrdersQuery, int>
 {
-    public async Task<int> HandleAsync(PeekOrdersQuery message, CancellationToken cancellationToken)
+    public async ValueTask<int> HandleAsync(PeekOrdersQuery message, CancellationToken cancellationToken)
     {
         db.Orders.Add(new Order { Id = message.PlaceFirst, Reference = "peek" });
         await db.SaveChangesAsync(cancellationToken);
@@ -103,12 +103,12 @@ internal sealed class PeekOrdersHandler(OrdersDbContext db) : IHandler<PeekOrder
 
 internal sealed class WhichScopeHandler(ScopeMarker marker) : IHandler<WhichScopeQuery, Guid>
 {
-    public Task<Guid> HandleAsync(WhichScopeQuery message, CancellationToken cancellationToken) => Task.FromResult(marker.Id);
+    public ValueTask<Guid> HandleAsync(WhichScopeQuery message, CancellationToken cancellationToken) => ValueTask.FromResult(marker.Id);
 }
 
 internal sealed class ChargeOrderHandler(BillingDbContext db) : IHandler<ChargeOrderCommand, Guid>
 {
-    public async Task<Guid> HandleAsync(ChargeOrderCommand message, CancellationToken cancellationToken)
+    public async ValueTask<Guid> HandleAsync(ChargeOrderCommand message, CancellationToken cancellationToken)
     {
         var charge = new Charge { Id = Guid.NewGuid(), OrderId = message.OrderId, Amount = message.Amount };
         db.Charges.Add(charge);
@@ -119,12 +119,12 @@ internal sealed class ChargeOrderHandler(BillingDbContext db) : IHandler<ChargeO
 
 internal sealed class CountChargesHandler(BillingDbContext db) : IHandler<CountChargesQuery, int>
 {
-    public Task<int> HandleAsync(CountChargesQuery message, CancellationToken cancellationToken) => db.Charges.CountAsync(cancellationToken);
+    public ValueTask<int> HandleAsync(CountChargesQuery message, CancellationToken cancellationToken) => new(db.Charges.CountAsync(cancellationToken));
 }
 
 internal sealed class CheckOutHandler(IDispatcher dispatcher) : IHandler<CheckOutCommand, Guid>
 {
-    public async Task<Guid> HandleAsync(CheckOutCommand message, CancellationToken cancellationToken)
+    public async ValueTask<Guid> HandleAsync(CheckOutCommand message, CancellationToken cancellationToken)
     {
         await dispatcher.SendAsync<Guid>(new PlaceOrderCommand(message.OrderId, message.Reference), cancellationToken);
         var charge = await dispatcher.SendAsync<Guid>(new ChargeOrderCommand(message.OrderId, message.Amount), cancellationToken);
@@ -139,7 +139,7 @@ internal sealed class CheckOutHandler(IDispatcher dispatcher) : IHandler<CheckOu
 
 internal sealed class DuplicatePlaceOrderHandler<TMarker> : IHandler<PlaceOrderCommand, Guid>
 {
-    public Task<Guid> HandleAsync(PlaceOrderCommand message, CancellationToken cancellationToken) => Task.FromResult(Guid.Empty);
+    public ValueTask<Guid> HandleAsync(PlaceOrderCommand message, CancellationToken cancellationToken) => ValueTask.FromResult(Guid.Empty);
 }
 
 public sealed class OrdersModule : IModule
@@ -218,7 +218,7 @@ public sealed class StepTrace
 
 internal sealed class FlakyHandler(OrdersDbContext db, AttemptLog log, ScopeMarker marker, ThrowingDisposable disposable) : IHandler<FlakyCommand, Guid>
 {
-    public async Task<Guid> HandleAsync(FlakyCommand message, CancellationToken cancellationToken)
+    public async ValueTask<Guid> HandleAsync(FlakyCommand message, CancellationToken cancellationToken)
     {
         log.ScopeIds.Add(marker.Id);
         GC.KeepAlive(disposable);
@@ -235,13 +235,13 @@ internal sealed class FlakyHandler(OrdersDbContext db, AttemptLog log, ScopeMark
 
 internal sealed class RelayHandler(IDispatcher dispatcher) : IHandler<RelayCommand, Guid>
 {
-    public Task<Guid> HandleAsync(RelayCommand message, CancellationToken cancellationToken) =>
+    public ValueTask<Guid> HandleAsync(RelayCommand message, CancellationToken cancellationToken) =>
         dispatcher.SendAsync<Guid>(new FlakyCommand(message.Id, int.MaxValue), cancellationToken);
 }
 
 internal sealed class StaleHandler(AttemptLog log, ScopeMarker marker) : IHandler<StaleCommand, int>
 {
-    public Task<int> HandleAsync(StaleCommand message, CancellationToken cancellationToken)
+    public ValueTask<int> HandleAsync(StaleCommand message, CancellationToken cancellationToken)
     {
         log.ScopeIds.Add(marker.Id);
         throw new StaleVersionException(2, 3);
@@ -250,7 +250,7 @@ internal sealed class StaleHandler(AttemptLog log, ScopeMarker marker) : IHandle
 
 internal sealed class ConflictingHandler(AttemptLog log, ScopeMarker marker) : IHandler<ConflictingQuery, int>
 {
-    public Task<int> HandleAsync(ConflictingQuery message, CancellationToken cancellationToken)
+    public ValueTask<int> HandleAsync(ConflictingQuery message, CancellationToken cancellationToken)
     {
         log.ScopeIds.Add(marker.Id);
         throw new ConcurrencyConflictException("Lost the race.");
@@ -259,7 +259,7 @@ internal sealed class ConflictingHandler(AttemptLog log, ScopeMarker marker) : I
 
 internal sealed class GateHandler(Gate gate) : IHandler<GateQuery, int>
 {
-    public async Task<int> HandleAsync(GateQuery message, CancellationToken cancellationToken)
+    public async ValueTask<int> HandleAsync(GateQuery message, CancellationToken cancellationToken)
     {
         gate.Enter();
         gate.Entered.TrySetResult();
@@ -270,11 +270,11 @@ internal sealed class GateHandler(Gate gate) : IHandler<GateQuery, int>
 
 internal sealed class FanOutHandler(IDispatcher dispatcher, Gate gate) : IHandler<FanOutQuery, int>
 {
-    public async Task<int> HandleAsync(FanOutQuery message, CancellationToken cancellationToken)
+    public async ValueTask<int> HandleAsync(FanOutQuery message, CancellationToken cancellationToken)
     {
-        var first = dispatcher.SendAsync<int>(new GateQuery(), cancellationToken);
+        var first = dispatcher.SendAsync<int>(new GateQuery(), cancellationToken).AsTask();
         await gate.Entered.Task.WaitAsync(TimeSpan.FromSeconds(30), cancellationToken);
-        var second = dispatcher.SendAsync<int>(new CountOrdersQuery(), cancellationToken);
+        var second = dispatcher.SendAsync<int>(new CountOrdersQuery(), cancellationToken).AsTask();
         gate.Release.TrySetResult();
         return (await Task.WhenAll(first, second)).Sum();
     }
@@ -282,17 +282,17 @@ internal sealed class FanOutHandler(IDispatcher dispatcher, Gate gate) : IHandle
 
 internal sealed class StructHandler : IHandler<StructCommand, Guid>
 {
-    public Task<Guid> HandleAsync(StructCommand message, CancellationToken cancellationToken) => Task.FromResult(message.Id);
+    public ValueTask<Guid> HandleAsync(StructCommand message, CancellationToken cancellationToken) => ValueTask.FromResult(message.Id);
 }
 
 internal sealed class NestedHandler : IHandler<NestedMessages.NestedQuery, int>
 {
-    public Task<int> HandleAsync(NestedMessages.NestedQuery message, CancellationToken cancellationToken) => Task.FromResult(7);
+    public ValueTask<int> HandleAsync(NestedMessages.NestedQuery message, CancellationToken cancellationToken) => ValueTask.FromResult(7);
 }
 
 internal sealed class DerivedHandler : IHandler<DerivedCommand, Guid>
 {
-    public Task<Guid> HandleAsync(DerivedCommand message, CancellationToken cancellationToken) => Task.FromResult(Guid.Empty);
+    public ValueTask<Guid> HandleAsync(DerivedCommand message, CancellationToken cancellationToken) => ValueTask.FromResult(Guid.Empty);
 }
 
 internal sealed class BaseCommandValidator : AbstractValidator<BaseCommand>
@@ -357,9 +357,9 @@ public sealed class ThrowingDisposable(AttemptLog log) : IAsyncDisposable
 
 internal sealed class AbandonHandler(IDispatcher dispatcher, Gate gate, Background background) : IHandler<AbandonQuery, int>
 {
-    public async Task<int> HandleAsync(AbandonQuery message, CancellationToken cancellationToken)
+    public async ValueTask<int> HandleAsync(AbandonQuery message, CancellationToken cancellationToken)
     {
-        background.Task = dispatcher.SendAsync<int>(new GateQuery(), cancellationToken);
+        background.Task = dispatcher.SendAsync<int>(new GateQuery(), cancellationToken).AsTask();
         await gate.Entered.Task.WaitAsync(TimeSpan.FromSeconds(30), cancellationToken);
         throw new InvalidOperationException("The handler gave up before its nested send finished.");
     }
@@ -367,7 +367,7 @@ internal sealed class AbandonHandler(IDispatcher dispatcher, Gate gate, Backgrou
 
 internal sealed class BackgroundHandler(IDispatcher dispatcher, Background background) : IHandler<BackgroundQuery, int>
 {
-    public Task<int> HandleAsync(BackgroundQuery message, CancellationToken cancellationToken)
+    public ValueTask<int> HandleAsync(BackgroundQuery message, CancellationToken cancellationToken)
     {
         background.Task = Task.Run(
             async () =>
@@ -376,6 +376,6 @@ internal sealed class BackgroundHandler(IDispatcher dispatcher, Background backg
                 return await dispatcher.SendAsync<int>(new CountOrdersQuery());
             },
             CancellationToken.None);
-        return Task.FromResult(0);
+        return ValueTask.FromResult(0);
     }
 }

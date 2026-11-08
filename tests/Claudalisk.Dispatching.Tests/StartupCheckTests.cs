@@ -107,7 +107,7 @@ public sealed class StartupCheckTests
 
     private sealed class ShipmentSentHandler<TMarker> : IHandler<ShipmentSent, int>
     {
-        public Task<int> HandleAsync(ShipmentSent message, CancellationToken cancellationToken) => Task.FromResult(0);
+        public ValueTask<int> HandleAsync(ShipmentSent message, CancellationToken cancellationToken) => ValueTask.FromResult(0);
     }
 
     private sealed class BrokenAssembly(Exception failure) : Assembly

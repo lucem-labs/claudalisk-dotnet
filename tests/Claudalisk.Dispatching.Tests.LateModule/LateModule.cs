@@ -20,7 +20,7 @@ public sealed record LateDisposableCommand(string Name);
 
 internal sealed class LateDisposableHandler(LateLog log) : IHandler<LateDisposableCommand, string>, IAsyncDisposable
 {
-    public Task<string> HandleAsync(LateDisposableCommand message, CancellationToken cancellationToken) => Task.FromResult(message.Name);
+    public ValueTask<string> HandleAsync(LateDisposableCommand message, CancellationToken cancellationToken) => ValueTask.FromResult(message.Name);
 
     public ValueTask DisposeAsync()
     {
@@ -36,10 +36,10 @@ internal sealed class LateDisposableCommandValidator(LateLog log) : AbstractVali
 
 internal sealed class LateHandler(LateLog log) : IHandler<LateCommand, string>
 {
-    public Task<string> HandleAsync(LateCommand message, CancellationToken cancellationToken)
+    public ValueTask<string> HandleAsync(LateCommand message, CancellationToken cancellationToken)
     {
         log.Handled.Add(message.Name);
-        return Task.FromResult(message.Name);
+        return ValueTask.FromResult(message.Name);
     }
 }
 

@@ -118,7 +118,7 @@ public sealed class PipelineTests
         var result = await scope.ServiceProvider.GetRequiredService<IOuterPipeline>().RunAsync(
             new InvoiceIssuedEvent("INV-1"),
             MessageKind.Event,
-            token => dispatcher.SendAsync<int>(new CountOrdersQuery(), token),
+            token => dispatcher.SendAsync<int>(new CountOrdersQuery(), token).AsTask(),
             TestContext.Current.CancellationToken);
 
         Assert.Equal(0, result);

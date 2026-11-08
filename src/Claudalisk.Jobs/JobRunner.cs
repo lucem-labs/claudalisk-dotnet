@@ -91,7 +91,7 @@ public sealed partial class JobRunner
                         ?? throw new InvalidOperationException(
                             $"Job kind '{kind.Name}' is not a command that runs in a unit of work; register AddJobs after AddDispatching and AddPersistence.");
                     var dispatcher = scope.ServiceProvider.GetRequiredService<IDispatcher>();
-                    await unitOfWork.RunAsync(token => dispatcher.SendAsync(payload, token), cancel.Token);
+                    await unitOfWork.RunAsync(token => dispatcher.SendAsync(payload, token).AsTask(), cancel.Token);
                     if (!context.Completed)
                     {
                         throw new InvalidOperationException(

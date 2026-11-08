@@ -129,7 +129,7 @@ public sealed class DispatcherTests
         var dispatcher = scope.ServiceProvider.GetRequiredService<IDispatcher>();
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => Task.WhenAll(dispatcher.SendAsync<int>(new CountOrdersQuery(), TestContext.Current.CancellationToken), dispatcher.SendAsync<int>(new CountChargesQuery(), TestContext.Current.CancellationToken)));
+            () => Task.WhenAll(dispatcher.SendAsync<int>(new CountOrdersQuery(), TestContext.Current.CancellationToken).AsTask(), dispatcher.SendAsync<int>(new CountChargesQuery(), TestContext.Current.CancellationToken).AsTask()));
 
         Assert.Contains("one at a time", error.Message);
     }
@@ -174,7 +174,7 @@ public sealed class DispatcherTests
         await using var scope = app.CreateAsyncScope();
         var gate = app.GetRequiredService<Gate>();
 
-        var send = scope.ServiceProvider.GetRequiredService<IDispatcher>().SendAsync<int>(new GateQuery(), cancellation.Token);
+        var send = scope.ServiceProvider.GetRequiredService<IDispatcher>().SendAsync<int>(new GateQuery(), cancellation.Token).AsTask();
         await gate.Entered.Task.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
         await cancellation.CancelAsync();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => send);

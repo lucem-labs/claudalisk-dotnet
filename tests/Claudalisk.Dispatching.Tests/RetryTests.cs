@@ -73,7 +73,7 @@ public sealed class RetryTests
         var dispatcher = scope.ServiceProvider.GetRequiredService<IDispatcher>();
 
         await Assert.ThrowsAsync<ConcurrencyConflictException>(() => scope.ServiceProvider.GetRequiredService<IUnitOfWork>().RunAsync<Guid>(
-            token => dispatcher.SendAsync<Guid>(new FlakyCommand(Guid.NewGuid(), int.MaxValue), token),
+            token => dispatcher.SendAsync<Guid>(new FlakyCommand(Guid.NewGuid(), int.MaxValue), token).AsTask(),
             TestContext.Current.CancellationToken));
 
         Assert.Equal([callerScope], app.GetRequiredService<AttemptLog>().ScopeIds);
@@ -121,7 +121,7 @@ public sealed class RetryTests
             () =>
             {
                 start.SignalAndWait(TimeSpan.FromSeconds(30));
-                return dispatcher.SendAsync<int>(new GateQuery());
+                return dispatcher.SendAsync<int>(new GateQuery()).AsTask();
             },
             TestContext.Current.CancellationToken);
 
@@ -145,7 +145,7 @@ public sealed class RetryTests
         var dispatcher = scope.ServiceProvider.GetRequiredService<IDispatcher>();
         var background = app.GetRequiredService<Background>();
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => dispatcher.SendAsync<int>(new AbandonQuery(), TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => dispatcher.SendAsync<int>(new AbandonQuery(), TestContext.Current.CancellationToken).AsTask());
         app.GetRequiredService<Gate>().Release.SetResult();
         Assert.Equal(1, await background.Task!.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken));
 

@@ -120,18 +120,18 @@ public sealed class TestOrder(long version) : AggregateRoot(version);
 
 internal sealed class ReviseOrderHandler(HandlerRuns runs) : IHandler<ReviseOrderCommand, long>
 {
-    public Task<long> HandleAsync(ReviseOrderCommand message, CancellationToken cancellationToken)
+    public ValueTask<long> HandleAsync(ReviseOrderCommand message, CancellationToken cancellationToken)
     {
         runs.Revised();
         var order = new TestOrder(8);
         order.RequireVersion(message.IfMatchVersion);
-        return Task.FromResult(order.Version);
+        return ValueTask.FromResult(order.Version);
     }
 }
 
 internal sealed class ContestOrderHandler(HandlerRuns runs) : IHandler<ContestOrderCommand, long>
 {
-    public Task<long> HandleAsync(ContestOrderCommand message, CancellationToken cancellationToken)
+    public ValueTask<long> HandleAsync(ContestOrderCommand message, CancellationToken cancellationToken)
     {
         runs.Contested();
         throw new ConcurrencyConflictException("Lost the race.");

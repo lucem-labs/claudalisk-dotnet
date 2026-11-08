@@ -47,16 +47,16 @@ public sealed class Refreshes
 
 internal sealed class RefreshCatalogHandler(Refreshes refreshes) : IHandler<RefreshCatalogCommand, int>
 {
-    public Task<int> HandleAsync(RefreshCatalogCommand message, CancellationToken cancellationToken)
+    public ValueTask<int> HandleAsync(RefreshCatalogCommand message, CancellationToken cancellationToken)
     {
         refreshes.Add(message.Source);
-        return Task.FromResult(refreshes.Sources.Count);
+        return ValueTask.FromResult(refreshes.Sources.Count);
     }
 }
 
 internal sealed class RebuildIndexHandler : IHandler<RebuildIndexCommand, int>
 {
-    public Task<int> HandleAsync(RebuildIndexCommand message, CancellationToken cancellationToken) => Task.FromResult(0);
+    public ValueTask<int> HandleAsync(RebuildIndexCommand message, CancellationToken cancellationToken) => ValueTask.FromResult(0);
 }
 
 public sealed class CatalogModule : IModule
