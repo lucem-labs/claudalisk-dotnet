@@ -83,7 +83,7 @@ internal static class ModuleOrder
         if (marker is not null && !(marker.IsClass && marker.IsSealed && !marker.IsAbstract))
         {
             throw new InvalidOperationException(
-                $"Module '{module.FullName}' names '{marker.FullName}' as a {role}, but a module marker must be an empty sealed class from an Interfaces project.");
+                $"Module '{module.FullName}' names '{marker.FullName}' as a {role}, but a module marker must be a sealed class from an Interfaces project.");
         }
     }
 }

@@ -92,7 +92,7 @@ public sealed class NullDependenciesModule : IModule
     }
 }
 
-public sealed class NonSealedContractModule : IModule
+public sealed class InterfaceContractModule : IModule
 {
     public Type? Contract => typeof(INotAMarker);
 

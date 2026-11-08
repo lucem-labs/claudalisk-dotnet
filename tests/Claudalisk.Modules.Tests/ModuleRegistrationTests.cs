@@ -69,6 +69,8 @@ public sealed class ModuleRegistrationTests
         var error = Assert.Throws<InvalidOperationException>(() => services.AddModules(Configuration, new NullDependencyModule(), new StorageModule()));
 
         Assert.Contains(typeof(NullDependencyModule).FullName!, error.Message);
+        Assert.Contains("null", error.Message);
+        Assert.DoesNotContain("Circular", error.Message);
         Assert.Empty(services);
     }
 
@@ -84,11 +86,11 @@ public sealed class ModuleRegistrationTests
     }
 
     [Fact]
-    public void AContractMustBeASealedMarkerClass()
+    public void AContractMustBeASealedMarkerClassNotAnInterface()
     {
         var services = new ServiceCollection();
 
-        var error = Assert.Throws<InvalidOperationException>(() => services.AddModules(Configuration, new NonSealedContractModule()));
+        var error = Assert.Throws<InvalidOperationException>(() => services.AddModules(Configuration, new InterfaceContractModule()));
 
         Assert.Contains(typeof(INotAMarker).FullName!, error.Message);
         Assert.Contains("contract", error.Message);
