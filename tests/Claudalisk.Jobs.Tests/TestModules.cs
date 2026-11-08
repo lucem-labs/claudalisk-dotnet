@@ -247,6 +247,21 @@ internal sealed class StrictCommandValidator : AbstractValidator<StrictCommand>
     public StrictCommandValidator() => RuleFor(command => command.Reference).NotEmpty();
 }
 
+internal sealed class ImportOrdersCommandValidator : AbstractValidator<ImportOrdersCommand>
+{
+    public ImportOrdersCommandValidator() => RuleFor(command => command.Total).GreaterThan(0);
+}
+
+internal sealed class OrderCanceledValidator : AbstractValidator<OrderCanceled>
+{
+    public OrderCanceledValidator() => RuleFor(canceled => canceled.OrderId).NotEmpty();
+}
+
+internal sealed class RebuildRefundsCommandValidator : AbstractValidator<RebuildRefundsCommand>
+{
+    public RebuildRefundsCommandValidator() => RuleFor(command => command.Id).NotEmpty();
+}
+
 internal sealed class WaitHandler(Signals signals, IJobContext job) : IHandler<WaitCommand, int>
 {
     public async Task<int> HandleAsync(WaitCommand message, CancellationToken cancellationToken)

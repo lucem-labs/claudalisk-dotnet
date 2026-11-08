@@ -104,12 +104,16 @@ public sealed partial class JobRunner
                         .Invoke(null, [scope.ServiceProvider, kind, context, payload, cancel.Token])!;
                     break;
                 default:
-                    await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().RunAsync(async token =>
+                    await scope.ServiceProvider.GetRequiredService<IOuterPipeline>().RunAsync(payload, MessageKind.Event, async outerToken =>
                     {
-                        await (Task)EventMethod.MakeGenericMethod(kind.PayloadType)
-                            .Invoke(null, [scope.ServiceProvider.GetRequiredService(kind.HandlerType!), payload, token])!;
-                        await scope.ServiceProvider.GetRequiredService<EventPublisher>().PublishTrackedAsync(token);
-                        await context.CompleteAsync(scope.ServiceProvider.GetRequiredService<IJobWriter>(), token);
+                        await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().RunAsync(async token =>
+                        {
+                            await (Task)EventMethod.MakeGenericMethod(kind.PayloadType)
+                                .Invoke(null, [scope.ServiceProvider.GetRequiredService(kind.HandlerType!), payload, token])!;
+                            await scope.ServiceProvider.GetRequiredService<EventPublisher>().PublishTrackedAsync(token);
+                            await context.CompleteAsync(scope.ServiceProvider.GetRequiredService<IJobWriter>(), token);
+                        }, outerToken);
+                        return true;
                     }, cancel.Token);
                     break;
             }
@@ -163,34 +167,43 @@ public sealed partial class JobRunner
         var tracker = scope.GetRequiredService<AggregateTracker>();
         var command = (TCommand)payload;
         var checkpoint = stored is null ? null : JsonSerializer.Deserialize<TCheckpoint>(stored, JobQueue.Json);
-        while (true)
+        await scope.GetRequiredService<IOuterPipeline>().RunAsync(command, MessageKind.Command, async outerToken =>
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            BatchStep<TCheckpoint> step;
-            if (handler.WritesNothing(command, checkpoint))
+            await LoopAsync(outerToken);
+            return true;
+        }, cancellationToken);
+
+        async Task LoopAsync(CancellationToken loopToken)
+        {
+            while (true)
             {
-                var computed = await handler.RunBatchAsync(command, checkpoint, cancellationToken);
-                if (tracker.HasTracked)
+                loopToken.ThrowIfCancellationRequested();
+                BatchStep<TCheckpoint> step;
+                if (handler.WritesNothing(command, checkpoint))
                 {
-                    throw new InvalidOperationException(
-                        $"Job kind '{kind.Name}' changed an aggregate in a batch that writes nothing; write it in the next batch.");
+                    var computed = await handler.RunBatchAsync(command, checkpoint, loopToken);
+                    if (tracker.HasTracked)
+                    {
+                        throw new InvalidOperationException(
+                            $"Job kind '{kind.Name}' changed an aggregate in a batch that writes nothing; write it in the next batch.");
+                    }
+
+                    step = await unitOfWork.RunAsync(token => SaveAsync(computed, token), loopToken);
+                }
+                else
+                {
+                    step = await unitOfWork.RunAsync(
+                        async token => await SaveAsync(await handler.RunBatchAsync(command, checkpoint, token), token),
+                        loopToken);
                 }
 
-                step = await unitOfWork.RunAsync(token => SaveAsync(computed, token), cancellationToken);
-            }
-            else
-            {
-                step = await unitOfWork.RunAsync(
-                    async token => await SaveAsync(await handler.RunBatchAsync(command, checkpoint, token), token),
-                    cancellationToken);
-            }
+                if (step.Done)
+                {
+                    return;
+                }
 
-            if (step.Done)
-            {
-                return;
+                checkpoint = step.Checkpoint;
             }
-
-            checkpoint = step.Checkpoint;
         }
 
         async Task<BatchStep<TCheckpoint>> SaveAsync(BatchStep<TCheckpoint> next, CancellationToken token)
@@ -213,17 +226,21 @@ public sealed partial class JobRunner
         var handler = (IRebuildJobHandler<TCommand, TEvent>)scope.GetRequiredService(kind.HandlerType!);
         var writer = scope.GetRequiredService<IJobWriter>();
         var publisher = scope.GetRequiredService<EventPublisher>();
-        await scope.GetRequiredService<IUnitOfWork>().RunAsync(async token =>
+        await scope.GetRequiredService<IOuterPipeline>().RunAsync((TCommand)payload, MessageKind.Command, async outerToken =>
         {
-            var includes = await handler.RebuildAsync((TCommand)payload, token);
-            var deliveries = await writer.LockActiveAsync(context.JobsModule, kind.EventKind!, token);
-            var included = deliveries
-                .Where(delivery => includes(JsonSerializer.Deserialize<TEvent>(delivery.Payload, JobQueue.Json)!))
-                .Select(delivery => delivery.Id)
-                .ToArray();
-            await writer.MarkSucceededAsync(context.JobsModule, kind.EventKind!, included, token);
-            await publisher.PublishTrackedAsync(token);
-            await context.CompleteAsync(writer, token);
+            await scope.GetRequiredService<IUnitOfWork>().RunAsync(async token =>
+            {
+                var includes = await handler.RebuildAsync((TCommand)payload, token);
+                var deliveries = await writer.LockActiveAsync(context.JobsModule, kind.EventKind!, token);
+                var included = deliveries
+                    .Where(delivery => includes(JsonSerializer.Deserialize<TEvent>(delivery.Payload, JobQueue.Json)!))
+                    .Select(delivery => delivery.Id)
+                    .ToArray();
+                await writer.MarkSucceededAsync(context.JobsModule, kind.EventKind!, included, token);
+                await publisher.PublishTrackedAsync(token);
+                await context.CompleteAsync(writer, token);
+            }, outerToken);
+            return true;
         }, cancellationToken);
     }
 
