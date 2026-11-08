@@ -37,7 +37,8 @@ public static partial class HealthEndpoint
                 var mapping = ProblemDetailsExceptionHandler.ProblemFor(
                     new DependencyUnavailableException("The database is unavailable."),
                     null,
-                    options.Value.DefaultRetryAfter);
+                    options.Value.DefaultRetryAfter,
+                    options.Value.ProblemTypeBase);
                 foreach (var (name, value) in mapping.Headers)
                 {
                     httpContext.Response.Headers[name] = value;

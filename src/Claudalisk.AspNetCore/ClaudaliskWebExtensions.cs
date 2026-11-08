@@ -22,6 +22,7 @@ public static class ClaudaliskWebExtensions
 
         services.AddOptions<ClaudaliskWebOptions>()
             .Validate(options => options.DefaultRetryAfter > TimeSpan.Zero, "ClaudaliskWebOptions.DefaultRetryAfter must be positive.")
+            .Validate(options => ProblemTypes.IsValidBase(options.ProblemTypeBase), "ClaudaliskWebOptions.ProblemTypeBase must be an absolute http or https URI with no query or fragment.")
             .ValidateOnStart();
         services.ConfigureHttpJsonOptions(options => options.SerializerOptions.NumberHandling = JsonNumberHandling.Strict);
         services.Configure<Microsoft.AspNetCore.Mvc.JsonOptions>(options => options.JsonSerializerOptions.NumberHandling = JsonNumberHandling.Strict);

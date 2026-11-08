@@ -1,11 +1,12 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.OpenApi;
+using Microsoft.Extensions.Options;
 using Microsoft.OpenApi;
 
 namespace Claudalisk.AspNetCore;
 
-internal sealed class ProblemResponses : IOpenApiOperationTransformer
+internal sealed class ProblemResponses(IOptions<ClaudaliskWebOptions> options) : IOpenApiOperationTransformer
 {
     internal const string MediaType = "application/problem+json";
 
@@ -32,7 +33,7 @@ internal sealed class ProblemResponses : IOpenApiOperationTransformer
             schema ??= await context.GetOrCreateSchemaAsync(typeof(ProblemDetails), null, cancellationToken);
             operation.Responses[key] = new OpenApiResponse
             {
-                Description = $"{description} Problem type: {type}",
+                Description = $"{description} Problem type: {ProblemTypes.Resolve(type, options.Value.ProblemTypeBase)}",
                 Content = new Dictionary<string, OpenApiMediaType> { [MediaType] = new OpenApiMediaType { Schema = schema } },
             };
         }

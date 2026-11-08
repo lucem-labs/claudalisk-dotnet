@@ -41,6 +41,42 @@ public sealed class ProblemDetailsTests
     }
 
     [Fact]
+    public async Task ADomainErrorHasNoDetailThatRepeatsItsTitle()
+    {
+        await using var app = await TestApp.StartAsync();
+
+        var (_, body) = await PostAsync(app, "/api/orders/fail/conflict");
+
+        Assert.False(body.TryGetProperty("detail", out _));
+    }
+
+    [Theory]
+    [InlineData("https://errors.example.test/docs/")]
+    [InlineData("https://errors.example.test/docs")]
+    public async Task TheProblemTypeBaseMakesEveryTypeAbsolute(string typeBase)
+    {
+        await using var app = await TestApp.StartAsync(configure: options => options.ProblemTypeBase = new Uri(typeBase));
+
+        var (_, domain) = await PostAsync(app, "/api/orders/fail/conflict");
+        var (_, unavailable) = await PostAsync(app, "/api/orders/fail/unavailable");
+
+        Assert.Equal("https://errors.example.test/docs/problems/order-booking/already-shipped", domain.GetProperty("type").GetString());
+        Assert.Equal("https://errors.example.test/docs/problems/dependency-unavailable", unavailable.GetProperty("type").GetString());
+    }
+
+    [Theory]
+    [InlineData("/relative")]
+    [InlineData("ftp://errors.example.test/")]
+    [InlineData("https://errors.example.test/?a=1")]
+    public async Task AnUnusableProblemTypeBaseFailsAtStartup(string typeBase)
+    {
+        var error = await Assert.ThrowsAsync<OptionsValidationException>(
+            () => TestApp.StartAsync(configure: options => options.ProblemTypeBase = new Uri(typeBase, UriKind.RelativeOrAbsolute)));
+
+        Assert.Contains("ProblemTypeBase", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task AValidationFailureBecomes400WithErrorsByProperty()
     {
         await using var app = await TestApp.StartAsync();
@@ -165,9 +201,9 @@ public sealed class ProblemDetailsTests
     [Fact]
     public void TheMappingCarriesTheRetryAfterOfTheException()
     {
-        var withWait = ProblemDetailsExceptionHandler.ProblemFor(new DependencyUnavailableException("down", TimeSpan.FromSeconds(89.2)), null, TimeSpan.FromSeconds(30));
-        var withoutWait = ProblemDetailsExceptionHandler.ProblemFor(new DependencyUnavailableException("down"), null, TimeSpan.FromSeconds(30));
-        var other = ProblemDetailsExceptionHandler.ProblemFor(new InvalidOperationException("bug"), null, TimeSpan.FromSeconds(30));
+        var withWait = ProblemDetailsExceptionHandler.ProblemFor(new DependencyUnavailableException("down", TimeSpan.FromSeconds(89.2)), null, TimeSpan.FromSeconds(30), null);
+        var withoutWait = ProblemDetailsExceptionHandler.ProblemFor(new DependencyUnavailableException("down"), null, TimeSpan.FromSeconds(30), null);
+        var other = ProblemDetailsExceptionHandler.ProblemFor(new InvalidOperationException("bug"), null, TimeSpan.FromSeconds(30), null);
 
         Assert.Equal(503, withWait.Problem.Status);
         Assert.Equal("90", withWait.Headers["Retry-After"]);

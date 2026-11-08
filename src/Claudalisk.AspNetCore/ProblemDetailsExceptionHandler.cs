@@ -22,7 +22,7 @@ internal sealed partial class ProblemDetailsExceptionHandler(
 
     public async ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
     {
-        var mapping = ProblemFor(exception, httpContext.RequestServices.GetService<ModuleCatalog>(), options.Value.DefaultRetryAfter);
+        var mapping = ProblemFor(exception, httpContext.RequestServices.GetService<ModuleCatalog>(), options.Value.DefaultRetryAfter, options.Value.ProblemTypeBase);
         switch (mapping.Problem.Status)
         {
             case StatusCodes.Status500InternalServerError:
@@ -47,7 +47,14 @@ internal sealed partial class ProblemDetailsExceptionHandler(
         });
     }
 
-    internal static ProblemMapping ProblemFor(Exception exception, ModuleCatalog? catalog, TimeSpan defaultRetryAfter) => exception switch
+    internal static ProblemMapping ProblemFor(Exception exception, ModuleCatalog? catalog, TimeSpan defaultRetryAfter, Uri? typeBase)
+    {
+        var mapping = Map(exception, catalog, defaultRetryAfter);
+        mapping.Problem.Type = ProblemTypes.Resolve(mapping.Problem.Type, typeBase);
+        return mapping;
+    }
+
+    private static ProblemMapping Map(Exception exception, ModuleCatalog? catalog, TimeSpan defaultRetryAfter) => exception switch
     {
         DomainException domain => Plain(DomainProblem(domain, catalog)),
         MessageValidationException validation => Plain(new ValidationProblemDetails(validation.Errors.ToDictionary(error => error.Key, error => error.Value))
@@ -110,7 +117,6 @@ internal sealed partial class ProblemDetailsExceptionHandler(
             },
             Type = ProblemTypes.For(exception, catalog),
             Title = exception.Title,
-            Detail = exception.Title,
         };
         foreach (var (key, value) in exception.Extensions)
         {
