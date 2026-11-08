@@ -43,7 +43,7 @@ internal sealed partial class MigrationHistoryMoves(IServiceProvider services)
         {
             foreach (var move in moves)
             {
-                var context = new DbContext(new DbContextOptionsBuilder<DbContext>().UseModuleSchema(services, move.To).Options);
+                var context = new DbContext(new DbContextOptionsBuilder<DbContext>().UseClaudaliskModuleSchema(services, move.To).Options);
                 await using var contextDisposal = context.ConfigureAwait(false);
                 var from = await HistoryExistsAsync(context, move.From, token).ConfigureAwait(false);
                 var to = await HistoryExistsAsync(context, move.To, token).ConfigureAwait(false);

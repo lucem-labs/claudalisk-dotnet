@@ -15,19 +15,19 @@ The examples use the modules `ordering` and `billing`, and an old shared schema 
 
 `DatabaseInitializer.MigrateAsync` runs three steps in order:
 
-1. **History moves:** every `AddMovedMigrationHistory(from, to)` registration moves a module's migration history table from one schema to another.
-2. **Baselines:** every `AddMigrationBaseline(schema, migration, replaces)` registration records a baseline in place of the migrations it replaces.
+1. **History moves:** every `AddClaudaliskMovedMigrationHistory(from, to)` registration moves a module's migration history table from one schema to another.
+2. **Baselines:** every `AddClaudaliskMigrationBaseline(schema, migration, replaces)` registration records a baseline in place of the migrations it replaces.
 3. **Migrations:** each registered context migrates, in registration order.
 
 Each step changes nothing when it has no registrations. Steps 1 and 2 each run in their own unit of work, so a refusal undoes everything its own step did. A step that already finished stays committed: when a baseline is refused after a history move, the move stays.
 
 ## Migration histories and naming conventions
 
-`UseModuleSchema` keeps each module's history in its own schema, as `<schema>."__EFMigrationsHistory"`. Its columns follow the context's naming convention:
+`UseClaudaliskModuleSchema` keeps each module's history in its own schema, as `<schema>."__EFMigrationsHistory"`. Its columns follow the context's naming convention:
 
 | context | history columns |
 |---|---|
-| a module context, through `UseModuleSchema` (snake_case) | `migration_id`, `product_version` |
+| a module context, through `UseClaudaliskModuleSchema` (snake_case) | `migration_id`, `product_version` |
 | a context without a naming convention, such as an old shared context | `MigrationId`, `ProductVersion` |
 
 Code that reads or writes a history takes the table and column names from EF Core, never from hard-coded names:
@@ -37,7 +37,7 @@ Code that reads or writes a history takes the table and column names from EF Cor
 
 `MigrationBaselines` reads histories this way. It runs in one unit of work: it takes a transaction-scoped advisory lock, so concurrent hosts adopt one at a time, and then reads every history before it writes any. It checks that a history table exists with `to_regclass`, because Npgsql's `ExistsAsync` detects a missing table by catching a failed query, which would abort the transaction. `DatabaseInitializer.MigrateAsync` refuses to run inside a unit of work.
 
-`MigrationBaselines` reads histories through `UseModuleSchema`, so it handles only module histories, with snake_case columns. A baseline replaces a module's own migrations, never a shared context's.
+`MigrationBaselines` reads histories through `UseClaudaliskModuleSchema`, so it handles only module histories, with snake_case columns. A baseline replaces a module's own migrations, never a shared context's.
 
 A script that reads histories without EF Core, such as a backup manifest, must handle both column sets. It can also ask the Host to list the migrations instead.
 
@@ -68,7 +68,7 @@ Every database that will adopt the baseline must hold every migration the baseli
 In the module's `ConfigureServices`, next to `AddModuleDbContext`:
 
 ```csharp
-services.AddMigrationBaseline(
+services.AddClaudaliskMigrationBaseline(
     OrderingDbContext.Schema,
     "20270110120000_InitialOrdering",
     ["20260901100000_CreateOrders", "20260915090000_OrderVersions", "20261002140000_MoveOrdersToOrdering"]);
@@ -139,7 +139,7 @@ Use this when an app's tables live in one shared context, and its modules move t
 The old context stays, with its migrations unchanged, so a fresh database still replays the old history:
 
 - its model becomes empty, and its model snapshot follows;
-- it keeps its old options, without `UseModuleSchema`, so its history stays where it was, with its old column names;
+- it keeps its old options, without `UseClaudaliskModuleSchema`, so its history stays where it was, with its old column names;
 - it is registered first, so it migrates before every module context.
 
 ```csharp
@@ -152,7 +152,7 @@ public static IServiceCollection AddLegacyDatabase(this IServiceCollection servi
 }
 ```
 
-The Host calls `AddPersistence`, then `AddLegacyDatabase`, then `AddModules`. The database is not a module, so no module depends on the legacy context. The legacy context only migrates. It has no `UseModuleSchema` interceptor, so it never joins a unit of work, and nothing reads or writes data through it.
+The Host calls `AddClaudaliskPersistence`, then `AddLegacyDatabase`, then `AddClaudaliskModules`. The database is not a module, so no module depends on the legacy context. The legacy context only migrates. It has no `UseClaudaliskModuleSchema` interceptor, so it never joins a unit of work, and nothing reads or writes data through it.
 
 ### 2. Move the tables in place
 
@@ -198,7 +198,7 @@ Register the move in the renamed module's `ConfigureServices`, from the old sche
 
 ```csharp
 services.AddModuleDbContext<FulfilmentDbContext>(FulfilmentDbContext.Schema);
-services.AddMovedMigrationHistory("shipping", FulfilmentDbContext.Schema);
+services.AddClaudaliskMovedMigrationHistory("shipping", FulfilmentDbContext.Schema);
 ```
 
 Before the baselines and migrations run, the step:
@@ -237,4 +237,4 @@ The rename also changes the module's other names: its projects and namespaces, j
 
 ### 4. Remove the move
 
-Once every environment has migrated past the rename, `AddMovedMigrationHistory` has nothing left to move. Remove it in a later pull request. Backups from before the rename are then migrated by the last commit that still has it.
+Once every environment has migrated past the rename, `AddClaudaliskMovedMigrationHistory` has nothing left to move. Remove it in a later pull request. Backups from before the rename are then migrated by the last commit that still has it.

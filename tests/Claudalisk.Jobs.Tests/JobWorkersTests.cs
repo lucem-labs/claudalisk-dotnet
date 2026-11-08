@@ -113,10 +113,10 @@ public sealed class JobWorkersTests
         var transport = new FailingTransport();
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddDispatching();
+        services.AddClaudaliskDispatching();
         services.AddSingleton<IJobTransport>(transport);
-        services.AddJobs(options => options.PollInterval = TimeSpan.FromMilliseconds(20));
-        services.AddModuleJobs("Orders", "orders", _ => { });
+        services.AddClaudaliskJobs(options => options.PollInterval = TimeSpan.FromMilliseconds(20));
+        services.AddClaudaliskModuleJobs("Orders", "orders", _ => { });
         await using var provider = services.BuildServiceProvider();
         var workers = provider.GetServices<IHostedService>().OfType<BackgroundService>().Single();
 
@@ -135,10 +135,10 @@ public sealed class JobWorkersTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<TimeProvider>(time);
-        services.AddDispatching();
+        services.AddClaudaliskDispatching();
         services.AddSingleton<IJobTransport>(transport);
-        services.AddJobs(options => options.PruneInterval = TimeSpan.FromHours(1));
-        services.AddModuleJobs("Orders", "orders", _ => { });
+        services.AddClaudaliskJobs(options => options.PruneInterval = TimeSpan.FromHours(1));
+        services.AddClaudaliskModuleJobs("Orders", "orders", _ => { });
         await using var provider = services.BuildServiceProvider();
         var workers = provider.GetServices<IHostedService>().OfType<BackgroundService>().Single();
 
@@ -160,10 +160,10 @@ public sealed class JobWorkersTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<TimeProvider>(time);
-        services.AddDispatching();
+        services.AddClaudaliskDispatching();
         services.AddSingleton<IJobTransport>(transport);
-        services.AddJobs(options => options.StaleSweepInterval = TimeSpan.FromMinutes(5));
-        services.AddModuleJobs("Orders", "orders", _ => { });
+        services.AddClaudaliskJobs(options => options.StaleSweepInterval = TimeSpan.FromMinutes(5));
+        services.AddClaudaliskModuleJobs("Orders", "orders", _ => { });
         await using var provider = services.BuildServiceProvider();
         var workers = provider.GetServices<IHostedService>().OfType<BackgroundService>().Single();
 
@@ -183,10 +183,10 @@ public sealed class JobWorkersTests
         var transport = new FailingAtShutdownTransport();
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddDispatching();
+        services.AddClaudaliskDispatching();
         services.AddSingleton<IJobTransport>(transport);
-        services.AddJobs();
-        services.AddModuleJobs("Orders", "orders", _ => { });
+        services.AddClaudaliskJobs();
+        services.AddClaudaliskModuleJobs("Orders", "orders", _ => { });
         await using var provider = services.BuildServiceProvider();
         var workers = provider.GetServices<IHostedService>().OfType<BackgroundService>().Single();
 

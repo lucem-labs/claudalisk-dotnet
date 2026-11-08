@@ -88,7 +88,7 @@ public sealed class RebuildTests
     [Fact]
     public void ARebuiltEventHasNoOtherSubscriptionInItsModule()
     {
-        var failure = Assert.Throws<InvalidOperationException>(() => new ServiceCollection().AddModuleJobs("Audit", "audit", jobs => jobs
+        var failure = Assert.Throws<InvalidOperationException>(() => new ServiceCollection().AddClaudaliskModuleJobs("Audit", "audit", jobs => jobs
             .Subscribe<OrderCanceled, RefundOnOrderCanceledHandler>("audit-order-canceled")
             .Rebuild<RebuildRefundsCommand, OrderCanceled, RebuildRefundsHandler>("rebuild-audit")
             .Subscribe<OrderCanceled, RefundOnOrderCanceledHandler>("audit-order-canceled")
@@ -111,7 +111,7 @@ public sealed class RebuildTests
     [Fact]
     public void ASubscriptionNeedsALaneThatExists()
     {
-        var failure = Assert.Throws<InvalidOperationException>(() => new ServiceCollection().AddModuleJobs(
+        var failure = Assert.Throws<InvalidOperationException>(() => new ServiceCollection().AddClaudaliskModuleJobs(
             "Audit", "audit", jobs => jobs.Subscribe<OrderCanceled, RefundOnOrderCanceledHandler>("audit-order-canceled", "audit")));
 
         Assert.Contains("no job lane 'audit'", failure.Message, StringComparison.Ordinal);
@@ -120,7 +120,7 @@ public sealed class RebuildTests
     [Fact]
     public void ARebuildNeedsASubscriptionToItsEvent()
     {
-        var failure = Assert.Throws<InvalidOperationException>(() => new ServiceCollection().AddModuleJobs(
+        var failure = Assert.Throws<InvalidOperationException>(() => new ServiceCollection().AddClaudaliskModuleJobs(
             "Audit", "audit", jobs => jobs.Rebuild<RebuildRefundsCommand, OrderCanceled, RebuildRefundsHandler>("rebuild-audit")));
 
         Assert.Contains("needs exactly one subscription", failure.Message, StringComparison.Ordinal);
@@ -129,11 +129,11 @@ public sealed class RebuildTests
     [Fact]
     public void ARebuildLaneKeepsOneWorkerAtMost()
     {
-        var before = Assert.Throws<InvalidOperationException>(() => new ServiceCollection().AddModuleJobs("Audit", "audit", jobs => jobs
+        var before = Assert.Throws<InvalidOperationException>(() => new ServiceCollection().AddClaudaliskModuleJobs("Audit", "audit", jobs => jobs
             .Lane("audit", 2)
             .Subscribe<OrderCanceled, RefundOnOrderCanceledHandler>("audit-order-canceled", "audit")
             .Rebuild<RebuildRefundsCommand, OrderCanceled, RebuildRefundsHandler>("rebuild-audit")));
-        var after = Assert.Throws<InvalidOperationException>(() => new ServiceCollection().AddModuleJobs("Audit", "audit", jobs => jobs
+        var after = Assert.Throws<InvalidOperationException>(() => new ServiceCollection().AddClaudaliskModuleJobs("Audit", "audit", jobs => jobs
             .Lane("audit", 1)
             .Subscribe<OrderCanceled, RefundOnOrderCanceledHandler>("audit-order-canceled", "audit")
             .Rebuild<RebuildRefundsCommand, OrderCanceled, RebuildRefundsHandler>("rebuild-audit")

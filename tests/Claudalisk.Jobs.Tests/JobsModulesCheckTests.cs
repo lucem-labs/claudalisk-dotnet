@@ -22,7 +22,7 @@ public sealed class JobsModulesCheckTests
     [Fact]
     public async Task JobsNamedAfterNoModuleFailStartupNamingThemAndTheKnownModules()
     {
-        var failure = await Assert.ThrowsAsync<InvalidOperationException>(() => StartAsync(services => services.AddModuleJobs("Ordres", "ordres", _ => { })));
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(() => StartAsync(services => services.AddClaudaliskModuleJobs("Ordres", "ordres", _ => { })));
 
         Assert.Contains("'Ordres'", failure.Message, StringComparison.Ordinal);
         Assert.Contains("known modules: 'Billing', 'Mail', 'Orders'", failure.Message, StringComparison.Ordinal);
@@ -31,6 +31,6 @@ public sealed class JobsModulesCheckTests
     [Fact]
     public async Task JobsOfALibraryOwnedModuleNeedNoModuleInTheCatalog()
     {
-        await StartAsync(services => services.AddModuleJobs("Scheduling", "scheduling", jobs => jobs.LibraryOwned()));
+        await StartAsync(services => services.AddClaudaliskModuleJobs("Scheduling", "scheduling", jobs => jobs.LibraryOwned()));
     }
 }

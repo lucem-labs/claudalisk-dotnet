@@ -141,7 +141,7 @@ public sealed class ProblemDetailsTests
     [Fact]
     public async Task ARaceLostOnEveryAttemptBecomes409AfterExactlyTheConfiguredAttempts()
     {
-        await using var app = await TestApp.StartAsync(configureServices: services => services.AddDispatching(options => options.ConcurrencyAttempts = 4));
+        await using var app = await TestApp.StartAsync(configureServices: services => services.AddClaudaliskDispatching(options => options.ConcurrencyAttempts = 4));
 
         var (response, body) = await PostAsync(app, $"/api/orders/{Guid.NewGuid()}/contest");
 

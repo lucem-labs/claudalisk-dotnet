@@ -9,7 +9,7 @@ namespace Claudalisk.Jobs;
 
 public static class JobsServiceCollectionExtensions
 {
-    public static IServiceCollection AddModuleJobs(this IServiceCollection services, string module, string schema, Action<ModuleJobsBuilder> configure)
+    public static IServiceCollection AddClaudaliskModuleJobs(this IServiceCollection services, string module, string schema, Action<ModuleJobsBuilder> configure)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configure);
@@ -30,7 +30,7 @@ public static class JobsServiceCollectionExtensions
         return services;
     }
 
-    public static IServiceCollection AddJobs(this IServiceCollection services, Action<JobsOptions>? configure = null)
+    public static IServiceCollection AddClaudaliskJobs(this IServiceCollection services, Action<JobsOptions>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(services);
         if (configure is not null)
@@ -45,7 +45,7 @@ public static class JobsServiceCollectionExtensions
 
         if (!services.Any(descriptor => descriptor.ServiceType == typeof(IDispatcher)))
         {
-            throw new InvalidOperationException("Call AddDispatching before AddJobs: jobs complete inside the dispatcher's unit-of-work step.");
+            throw new InvalidOperationException("Call AddClaudaliskDispatching before AddClaudaliskJobs: jobs complete inside the dispatcher's unit-of-work step.");
         }
 
         Registry(services);

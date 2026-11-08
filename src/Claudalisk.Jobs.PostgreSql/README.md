@@ -5,12 +5,12 @@ The PostgreSQL transport for `Claudalisk.Jobs`: one `jobs` table in each jobs mo
 ## Setup
 
 ```csharp
-services.AddPersistence(connectionString);
-services.AddJobs();
-services.AddPostgreSqlJobs();
+services.AddClaudaliskPersistence(connectionString);
+services.AddClaudaliskJobs();
+services.AddClaudaliskPostgreSqlJobs();
 ```
 
-`AddPostgreSqlJobs` registers the transport as a singleton and the writer as a scoped service. It needs `AddPersistence`.
+`AddClaudaliskPostgreSqlJobs` registers the transport as a singleton and the writer as a scoped service. It needs `AddClaudaliskPersistence`.
 
 - The writer uses the scope's connection, so a job row is inserted in the unit of work that queues it. If the unit of work rolls back, the job is never queued. It also sends a `NOTIFY` on the module's channel.
 - The transport claims jobs with `FOR UPDATE SKIP LOCKED`, so workers do not take the same row. An idle worker waits with `LISTEN` on the module's channel.

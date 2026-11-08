@@ -138,7 +138,7 @@ public sealed class PipelineTests
     public async Task AModuleAddedAfterAddDispatchingHasItsHandlerAndValidatorUsed()
     {
         await using var app = await PostgresServer.CreateAppAsync(services =>
-            services.AddModules(new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build(), new LateModule.LateModule()));
+            services.AddClaudaliskModules(new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build(), new LateModule.LateModule()));
 
         var result = await SendAsync<string>(app, new LateModule.LateCommand("late"));
         var error = await Assert.ThrowsAsync<MessageValidationException>(() => SendAsync<string>(app, new LateModule.LateCommand("")));
@@ -152,7 +152,7 @@ public sealed class PipelineTests
     public async Task ALateModulesHandlerAndValidatorAreDisposedWhenTheSendCompletes()
     {
         await using var app = await PostgresServer.CreateAppAsync(services =>
-            services.AddModules(new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build(), new LateModule.LateModule()));
+            services.AddClaudaliskModules(new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build(), new LateModule.LateModule()));
 
         await SendAsync<string>(app, new LateModule.LateDisposableCommand("late"));
 

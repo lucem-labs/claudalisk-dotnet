@@ -85,7 +85,7 @@ public sealed partial class Scheduler
         await using var scopeDisposal = scope.ConfigureAwait(false);
         var db = scope.ServiceProvider.GetRequiredService<SchedulingDbContext>();
         var writer = scope.ServiceProvider.GetRequiredService<IJobWriter>();
-        var jobs = _jobs.Find(SchedulingJobs.Name) ?? throw new InvalidOperationException("The scheduler's jobs module is not registered. Call AddScheduling.");
+        var jobs = _jobs.Find(SchedulingJobs.Name) ?? throw new InvalidOperationException("The scheduler's jobs module is not registered. Call AddClaudaliskScheduling.");
         return await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().RunAsync<DateTimeOffset?>(async token =>
         {
             await db.Database.ExecuteSqlInterpolatedAsync(

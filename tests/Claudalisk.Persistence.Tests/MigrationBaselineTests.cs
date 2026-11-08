@@ -61,8 +61,8 @@ public sealed class MigrationBaselineTests
     {
         var database = await TransitionalDatabaseAsync(Replaced);
         await using var app = PostgresServer.CreateApp(database, services => services
-            .AddMigrationBaseline(OrdersDbContext.Schema, Baseline, Replaced)
-            .AddMigrationBaseline(BillingDbContext.Schema, "20261101000000_BillingBaseline", ["20261026000000_InitialBilling", "20261027000000_Missing"]));
+            .AddClaudaliskMigrationBaseline(OrdersDbContext.Schema, Baseline, Replaced)
+            .AddClaudaliskMigrationBaseline(BillingDbContext.Schema, "20261101000000_BillingBaseline", ["20261026000000_InitialBilling", "20261027000000_Missing"]));
         await using var scope = app.CreateAsyncScope();
 
         var refused = await Assert.ThrowsAsync<MigrationBaselineException>(
@@ -88,9 +88,9 @@ public sealed class MigrationBaselineTests
     public void ABaselineMustReplaceAtLeastOneMigrationAndIsRegisteredOncePerSchema()
     {
         var services = new ServiceCollection();
-        Assert.Throws<ArgumentException>(() => services.AddMigrationBaseline("orders", Baseline, []));
+        Assert.Throws<ArgumentException>(() => services.AddClaudaliskMigrationBaseline("orders", Baseline, []));
 
-        services.AddMigrationBaseline("orders", Baseline, Replaced).AddMigrationBaseline("orders", Baseline, Replaced);
+        services.AddClaudaliskMigrationBaseline("orders", Baseline, Replaced).AddClaudaliskMigrationBaseline("orders", Baseline, Replaced);
 
         Assert.Single(services, descriptor => descriptor.ImplementationInstance is MigrationBaseline);
     }
@@ -98,12 +98,12 @@ public sealed class MigrationBaselineTests
     [Fact]
     public void ASecondBaselineForASchemaWithAnotherMigrationOrReplacedListIsRejected()
     {
-        var services = new ServiceCollection().AddMigrationBaseline("orders", Baseline, Replaced);
+        var services = new ServiceCollection().AddClaudaliskMigrationBaseline("orders", Baseline, Replaced);
 
         var otherMigration = Assert.Throws<InvalidOperationException>(
-            () => services.AddMigrationBaseline("orders", "20261102000000_OrdersBaseline", Replaced));
+            () => services.AddClaudaliskMigrationBaseline("orders", "20261102000000_OrdersBaseline", Replaced));
         var otherList = Assert.Throws<InvalidOperationException>(
-            () => services.AddMigrationBaseline("orders", Baseline, [.. Replaced, "20261028000000_Extra"]));
+            () => services.AddClaudaliskMigrationBaseline("orders", Baseline, [.. Replaced, "20261028000000_Extra"]));
 
         Assert.Contains(Baseline, otherMigration.Message);
         Assert.Contains("20261102000000_OrdersBaseline", otherMigration.Message);
@@ -164,7 +164,7 @@ public sealed class MigrationBaselineTests
     public async Task MigratingInsideAUnitOfWorkIsRefusedBeforeAnythingChanges()
     {
         var database = await TransitionalDatabaseAsync(Replaced);
-        await using var app = PostgresServer.CreateApp(database, services => services.AddMigrationBaseline(OrdersDbContext.Schema, Baseline, Replaced));
+        await using var app = PostgresServer.CreateApp(database, services => services.AddClaudaliskMigrationBaseline(OrdersDbContext.Schema, Baseline, Replaced));
         await using var scope = app.CreateAsyncScope();
         var initializer = scope.ServiceProvider.GetRequiredService<DatabaseInitializer>();
 
@@ -225,8 +225,8 @@ public sealed class MigrationBaselineTests
     {
         var services = new ServiceCollection();
 
-        Assert.Throws<ArgumentException>(() => services.AddMigrationBaseline("orders", Baseline, [Replaced[0], Replaced[0]]));
-        Assert.Throws<ArgumentException>(() => services.AddMigrationBaseline("orders", Baseline, [Replaced[0], Baseline]));
+        Assert.Throws<ArgumentException>(() => services.AddClaudaliskMigrationBaseline("orders", Baseline, [Replaced[0], Replaced[0]]));
+        Assert.Throws<ArgumentException>(() => services.AddClaudaliskMigrationBaseline("orders", Baseline, [Replaced[0], Baseline]));
         Assert.Empty(services);
     }
 
@@ -235,7 +235,7 @@ public sealed class MigrationBaselineTests
     [InlineData(" ")]
     public void ABaselineRejectsABlankReplacedMigration(string? blank)
     {
-        Assert.ThrowsAny<ArgumentException>(() => new ServiceCollection().AddMigrationBaseline("orders", Baseline, [Replaced[0], blank!]));
+        Assert.ThrowsAny<ArgumentException>(() => new ServiceCollection().AddClaudaliskMigrationBaseline("orders", Baseline, [Replaced[0], blank!]));
     }
 
     [Theory]
@@ -245,13 +245,13 @@ public sealed class MigrationBaselineTests
     [InlineData("orders\"; DROP SCHEMA x")]
     public void ABaselineSchemaMustBeALowerCaseIdentifier(string schema)
     {
-        Assert.Throws<ArgumentException>(() => new ServiceCollection().AddMigrationBaseline(schema, Baseline, Replaced));
+        Assert.Throws<ArgumentException>(() => new ServiceCollection().AddClaudaliskMigrationBaseline(schema, Baseline, Replaced));
     }
 
     private static async Task MigrateWithBaselineAsync(string database)
     {
         await using var app = PostgresServer.CreateApp(database, services => services
-            .AddMigrationBaseline(OrdersDbContext.Schema, Baseline, Replaced));
+            .AddClaudaliskMigrationBaseline(OrdersDbContext.Schema, Baseline, Replaced));
         await using var scope = app.CreateAsyncScope();
         await scope.ServiceProvider.GetRequiredService<DatabaseInitializer>().MigrateAsync(TestContext.Current.CancellationToken);
     }

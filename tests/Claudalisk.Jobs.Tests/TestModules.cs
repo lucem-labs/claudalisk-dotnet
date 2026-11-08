@@ -402,7 +402,7 @@ public sealed class OrdersModule : IModule
     public void ConfigureServices(IServiceCollection services, IConfiguration configuration)
     {
         services.AddModuleDbContext<OrdersDbContext>("orders");
-        services.AddModuleJobs("Orders", "orders", jobs => jobs
+        services.AddClaudaliskModuleJobs("Orders", "orders", jobs => jobs
             .Lane("slow", 1)
             .Retention(TimeSpan.FromDays(7))
             .Command<ShipOrderCommand>("ship-order")
@@ -428,7 +428,7 @@ public sealed class BillingModule : IModule
     public void ConfigureServices(IServiceCollection services, IConfiguration configuration)
     {
         services.AddModuleDbContext<BillingDbContext>("billing");
-        services.AddModuleJobs("Billing", "billing", jobs => jobs
+        services.AddClaudaliskModuleJobs("Billing", "billing", jobs => jobs
             .Lane("refunds", 1)
             .Subscribe<OrderCanceled, RefundOnOrderCanceledHandler>("refund-on-order-canceled", "refunds")
             .Rebuild<RebuildRefundsCommand, OrderCanceled, RebuildRefundsHandler>("rebuild-refunds"));
@@ -444,7 +444,7 @@ public sealed class MailModule : IModule
     public void ConfigureServices(IServiceCollection services, IConfiguration configuration)
     {
         services.AddModuleDbContext<MailDbContext>("mail");
-        services.AddModuleJobs("Mail", "mail", jobs => jobs
+        services.AddClaudaliskModuleJobs("Mail", "mail", jobs => jobs
             .Subscribe<OrderCanceled, MailOnOrderCanceledHandler>("mail-on-order-canceled")
             .Subscribe<OrderShipped, RefuseOnOrderShippedHandler>("refuse-on-order-shipped"));
     }
@@ -455,10 +455,10 @@ internal static class TestApp
     public static IServiceCollection AddTestApp(this IServiceCollection services, string connectionString, Action<JobsOptions>? configure = null)
     {
         services.AddLogging();
-        services.AddPersistence(connectionString);
-        services.AddModules(new ConfigurationBuilder().Build(), new OrdersModule(), new BillingModule(), new MailModule());
-        services.AddDispatching();
-        services.AddJobs(options =>
+        services.AddClaudaliskPersistence(connectionString);
+        services.AddClaudaliskModules(new ConfigurationBuilder().Build(), new OrdersModule(), new BillingModule(), new MailModule());
+        services.AddClaudaliskDispatching();
+        services.AddClaudaliskJobs(options =>
         {
             options.WorkersEnabled = false;
             options.RetryBaseDelay = TimeSpan.Zero;
@@ -469,7 +469,7 @@ internal static class TestApp
             services.Configure(configure);
         }
 
-        services.AddPostgreSqlJobs();
+        services.AddClaudaliskPostgreSqlJobs();
         services.AddSingleton<Signals>();
         services.AddSingleton<Computations>();
         return services;

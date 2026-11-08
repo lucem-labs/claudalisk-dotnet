@@ -210,7 +210,7 @@ public sealed class JobsRegistry
         ArgumentNullException.ThrowIfNull(payloadType);
         return _modules.Values.FirstOrDefault(module => !module.LibraryOwned && module.KindFor(payloadType) is not null)
             ?? throw new InvalidOperationException(
-                $"No module registers '{payloadType.FullName}' as a job. Register it with AddModuleJobs(...).Command<{payloadType.Name}>(\"<kind>\").");
+                $"No module registers '{payloadType.FullName}' as a job. Register it with AddClaudaliskModuleJobs(...).Command<{payloadType.Name}>(\"<kind>\").");
     }
 
     internal object? Map(object domainEvent) =>

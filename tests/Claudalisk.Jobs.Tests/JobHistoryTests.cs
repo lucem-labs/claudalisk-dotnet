@@ -119,7 +119,7 @@ public sealed class JobHistoryTests
     {
         var services = new ServiceCollection();
 
-        Assert.Throws<ArgumentOutOfRangeException>(() => services.AddModuleJobs("Orders", "orders", jobs => jobs.Retention(TimeSpan.Zero)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => services.AddClaudaliskModuleJobs("Orders", "orders", jobs => jobs.Retention(TimeSpan.Zero)));
     }
 
     [Fact]

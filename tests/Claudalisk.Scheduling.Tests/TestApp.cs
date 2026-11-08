@@ -127,12 +127,12 @@ internal static class TestApp
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(values).Build();
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddPersistence(connectionString);
-        services.AddModules(configuration, new CatalogModule());
-        services.AddDispatching();
-        services.AddJobs(options => options.WorkersEnabled = settings.Workers);
-        services.AddPostgreSqlJobs();
-        services.AddScheduling(configuration);
+        services.AddClaudaliskPersistence(connectionString);
+        services.AddClaudaliskModules(configuration, new CatalogModule());
+        services.AddClaudaliskDispatching();
+        services.AddClaudaliskJobs(options => options.WorkersEnabled = settings.Workers);
+        services.AddClaudaliskPostgreSqlJobs();
+        services.AddClaudaliskScheduling(configuration);
         services.AddSingleton<TimeProvider>(time);
         services.AddSingleton(refreshes);
         return services;

@@ -22,7 +22,7 @@ Claudalisk is an opinionated Claude Code plugin for building .NET + React apps. 
 | [`Claudalisk.AspNetCore`](https://github.com/lucem-labs/claudalisk-dotnet/blob/main/src/Claudalisk.AspNetCore/README.md) | The Problem Details handler, conditional writes, HAL members, the health endpoint and module tags in OpenAPI | CLA-0045, CLA-0046, CLA-0063 |
 | [`Claudalisk.Jobs`](https://github.com/lucem-labs/claudalisk-dotnet/blob/main/src/Claudalisk.Jobs/README.md) | Background jobs, batch jobs, event jobs, rebuilds and the jobs router | CLA-0058, CLA-0059, CLA-0060 |
 | [`Claudalisk.Jobs.PostgreSql`](https://github.com/lucem-labs/claudalisk-dotnet/blob/main/src/Claudalisk.Jobs.PostgreSql/README.md) | The PostgreSQL transport for jobs | CLA-0058 |
-| [`Claudalisk.Modules`](https://github.com/lucem-labs/claudalisk-dotnet/blob/main/src/Claudalisk.Modules/README.md) | `IModule`, `AddModules` and the module catalog: dependency-ordered module registration | CLA-0004 |
+| [`Claudalisk.Modules`](https://github.com/lucem-labs/claudalisk-dotnet/blob/main/src/Claudalisk.Modules/README.md) | `IModule`, `AddClaudaliskModules` and the module catalog: dependency-ordered module registration | CLA-0004 |
 | [`Claudalisk.Scheduling`](https://github.com/lucem-labs/claudalisk-dotnet/blob/main/src/Claudalisk.Scheduling/README.md) | The scheduler, which queues commands as jobs in its own jobs module on a cron schedule; it depends on the jobs library and a jobs transport | CLA-0061 |
 
 An AWS SQS transport for jobs is planned. Apps pin exact package versions, and the packages will be published to nuget.org.

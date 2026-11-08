@@ -54,8 +54,8 @@ public sealed class RetryDelayTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddDispatching();
-        services.AddJobs(options => options.RetryAfterMaxDelay = TimeSpan.Zero);
+        services.AddClaudaliskDispatching();
+        services.AddClaudaliskJobs(options => options.RetryAfterMaxDelay = TimeSpan.Zero);
         using var provider = services.BuildServiceProvider();
 
         var failure = Assert.Throws<OptionsValidationException>(() => provider.GetRequiredService<IOptions<JobsOptions>>().Value);
@@ -71,8 +71,8 @@ public sealed class RetryDelayTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddDispatching();
-        services.AddJobs(options => typeof(JobsOptions).GetProperty(name)!.SetValue(options, TimeSpan.Zero));
+        services.AddClaudaliskDispatching();
+        services.AddClaudaliskJobs(options => typeof(JobsOptions).GetProperty(name)!.SetValue(options, TimeSpan.Zero));
         using var provider = services.BuildServiceProvider();
 
         var failure = Assert.Throws<OptionsValidationException>(() => provider.GetRequiredService<IOptions<JobsOptions>>().Value);
@@ -87,8 +87,8 @@ public sealed class RetryDelayTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddDispatching();
-        services.AddJobs(options => options.PollInterval = TimeSpan.FromSeconds(seconds));
+        services.AddClaudaliskDispatching();
+        services.AddClaudaliskJobs(options => options.PollInterval = TimeSpan.FromSeconds(seconds));
         using var provider = services.BuildServiceProvider();
 
         var failure = Assert.Throws<OptionsValidationException>(() => provider.GetRequiredService<IOptions<JobsOptions>>().Value);
@@ -101,8 +101,8 @@ public sealed class RetryDelayTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddDispatching();
-        services.AddJobs(options => options.PollInterval = Timeout.InfiniteTimeSpan);
+        services.AddClaudaliskDispatching();
+        services.AddClaudaliskJobs(options => options.PollInterval = Timeout.InfiniteTimeSpan);
         using var provider = services.BuildServiceProvider();
 
         Assert.Equal(Timeout.InfiniteTimeSpan, provider.GetRequiredService<IOptions<JobsOptions>>().Value.PollInterval);
@@ -113,8 +113,8 @@ public sealed class RetryDelayTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddDispatching();
-        services.AddJobs(options => options.RetryBaseDelay = TimeSpan.FromSeconds(-1));
+        services.AddClaudaliskDispatching();
+        services.AddClaudaliskJobs(options => options.RetryBaseDelay = TimeSpan.FromSeconds(-1));
         using var provider = services.BuildServiceProvider();
 
         var failure = Assert.Throws<OptionsValidationException>(() => provider.GetRequiredService<IOptions<JobsOptions>>().Value);
@@ -127,8 +127,8 @@ public sealed class RetryDelayTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddDispatching();
-        services.AddJobs(options => options.PollInterval = TimeSpan.Zero);
+        services.AddClaudaliskDispatching();
+        services.AddClaudaliskJobs(options => options.PollInterval = TimeSpan.Zero);
         using var provider = services.BuildServiceProvider();
 
         Assert.Throws<OptionsValidationException>(() => provider.GetRequiredService<IStartupValidator>().Validate());

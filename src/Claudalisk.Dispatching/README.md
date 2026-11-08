@@ -1,6 +1,6 @@
 # Claudalisk.Dispatching
 
-The in-process dispatcher. `AddDispatching` finds the `IHandler<,>` and `IValidator<>` classes of every module assembly and registers them as scoped services. `IDispatcher.SendAsync` runs a message through the pipeline and into its handler. A message's name ends in `Command` or `Query`.
+The in-process dispatcher. `AddClaudaliskDispatching` finds the `IHandler<,>` and `IValidator<>` classes of every module assembly and registers them as scoped services. `IDispatcher.SendAsync` runs a message through the pipeline and into its handler. A message's name ends in `Command` or `Query`.
 
 ## Pipeline order
 
@@ -57,7 +57,7 @@ Validation is by exact type: only the `IValidator<T>` registered for the message
 
 A pipeline step with `Order` equal to `PipelineOrder.Retry` is rejected when the hosted startup check or `ValidateDispatching` runs, and again when a scope's dispatcher is created. The registry itself never constructs steps.
 
-The registry reads the service collection once, when the provider first builds it, and keeps no reference to the collection afterwards. A handler or validator in a module assembly that was added to the catalog after `AddDispatching` is found at that moment and created per send with `ActivatorUtilities`. It is disposed (`IAsyncDisposable` first, else `IDisposable`) when the send, or the validation, completes.
+The registry reads the service collection once, when the provider first builds it, and keeps no reference to the collection afterwards. A handler or validator in a module assembly that was added to the catalog after `AddClaudaliskDispatching` is found at that moment and created per send with `ActivatorUtilities`. It is disposed (`IAsyncDisposable` first, else `IDisposable`) when the send, or the validation, completes.
 
 ## Logging
 

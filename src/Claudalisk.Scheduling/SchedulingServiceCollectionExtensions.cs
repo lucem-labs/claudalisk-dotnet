@@ -21,7 +21,7 @@ public static class SchedulingServiceCollectionExtensions
         return services;
     }
 
-    public static IServiceCollection AddScheduling(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddClaudaliskScheduling(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
@@ -54,7 +54,7 @@ public static class SchedulingServiceCollectionExtensions
         if (registry?.Find(SchedulingJobs.Name) is { LibraryOwned: false })
         {
             throw new InvalidOperationException(
-                $"The jobs module name '{SchedulingJobs.Name}' is reserved for the scheduler, but AddModuleJobs already registered a jobs module with that name. Rename that jobs module.");
+                $"The jobs module name '{SchedulingJobs.Name}' is reserved for the scheduler, but AddClaudaliskModuleJobs already registered a jobs module with that name. Rename that jobs module.");
         }
 
         services.AddLibraryJobs(SchedulingJobs.Name, SchedulingJobs.Schema, configure);

@@ -11,7 +11,7 @@ internal sealed class SchedulingStartupCheck(SchedulableCommands commands, IServ
         if (services.GetService(typeof(JobRunner)) is null || services.GetService(typeof(IJobTransport)) is null)
         {
             throw new InvalidOperationException(
-                "AddScheduling queues each fire as a job: call AddJobs and register a jobs transport, such as AddPostgreSqlJobs.");
+                "AddClaudaliskScheduling queues each fire as a job: call AddClaudaliskJobs and register a jobs transport, such as AddClaudaliskPostgreSqlJobs.");
         }
 
         if (services.GetService(typeof(ModuleCatalog)) is not ModuleCatalog catalog)

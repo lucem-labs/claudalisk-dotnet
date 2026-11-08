@@ -155,8 +155,8 @@ internal static class TestApp
         builder.WebHost.UseTestServer();
         builder.Configuration.Sources.Clear();
         builder.Configuration.AddInMemoryCollection(settings ?? []);
-        builder.Services.AddModules(builder.Configuration, new OrderBookingModule());
-        builder.Services.AddDispatching();
+        builder.Services.AddClaudaliskModules(builder.Configuration, new OrderBookingModule());
+        builder.Services.AddClaudaliskDispatching();
         builder.Services.AddScoped<IUnitOfWork, FakeUnitOfWork>();
         builder.Services.AddSingleton<HandlerRuns>();
         builder.Services.AddClaudaliskWeb(configure);

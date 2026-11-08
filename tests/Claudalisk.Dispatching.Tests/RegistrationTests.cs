@@ -25,7 +25,7 @@ public sealed class RegistrationTests
         var services = new ServiceCollection().AddTestApp(UnusedDatabase);
         var count = services.Count;
 
-        services.AddDispatching();
+        services.AddClaudaliskDispatching();
 
         Assert.Equal(count, services.Count);
     }

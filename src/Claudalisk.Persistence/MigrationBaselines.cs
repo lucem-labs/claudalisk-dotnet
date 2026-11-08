@@ -135,7 +135,7 @@ internal sealed partial class MigrationBaselines(IServiceProvider services)
     }
 
     private DbContext HistoryContext(string schema) =>
-        new(new DbContextOptionsBuilder<DbContext>().UseModuleSchema(services, schema).Options);
+        new(new DbContextOptionsBuilder<DbContext>().UseClaudaliskModuleSchema(services, schema).Options);
 
     private static async Task<List<string>?> AppliedAsync(DbContext context, string schema, CancellationToken cancellationToken)
     {

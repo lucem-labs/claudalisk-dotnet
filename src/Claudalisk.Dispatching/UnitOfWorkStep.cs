@@ -16,7 +16,7 @@ internal sealed class UnitOfWorkStep(IServiceProvider scope) : IPipelineStep
 
         var unitOfWork = scope.GetService<IUnitOfWork>()
             ?? throw new InvalidOperationException(
-                $"'{context.MessageType.FullName}' is a command, and commands run in a unit of work, but no IUnitOfWork is registered. Call AddPersistence.");
+                $"'{context.MessageType.FullName}' is a command, and commands run in a unit of work, but no IUnitOfWork is registered. Call AddClaudaliskPersistence.");
         return unitOfWork.RunAsync(next, cancellationToken);
     }
 }

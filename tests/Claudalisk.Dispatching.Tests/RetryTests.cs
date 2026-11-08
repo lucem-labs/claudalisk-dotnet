@@ -26,7 +26,7 @@ public sealed class RetryTests
     [Fact]
     public async Task ACommandThatAlwaysConflictsFailsAfterExactlyTheConfiguredAttempts()
     {
-        await using var app = await PostgresServer.CreateAppAsync(services => services.AddDispatching(options => options.ConcurrencyAttempts = 4));
+        await using var app = await PostgresServer.CreateAppAsync(services => services.AddClaudaliskDispatching(options => options.ConcurrencyAttempts = 4));
 
         await Assert.ThrowsAsync<ConcurrencyConflictException>(() => SendAsync<Guid>(app, new FlakyCommand(Guid.NewGuid(), int.MaxValue)));
 
@@ -37,7 +37,7 @@ public sealed class RetryTests
     [Fact]
     public async Task OneAttemptMeansNoRetry()
     {
-        await using var app = await PostgresServer.CreateAppAsync(services => services.AddDispatching(options => options.ConcurrencyAttempts = 1));
+        await using var app = await PostgresServer.CreateAppAsync(services => services.AddClaudaliskDispatching(options => options.ConcurrencyAttempts = 1));
 
         await Assert.ThrowsAsync<ConcurrencyConflictException>(() => SendAsync<Guid>(app, new FlakyCommand(Guid.NewGuid(), 1)));
 
@@ -92,7 +92,7 @@ public sealed class RetryTests
     [Fact]
     public async Task ZeroAttemptsIsRejected()
     {
-        await using var app = await PostgresServer.CreateAppAsync(services => services.AddDispatching(options => options.ConcurrencyAttempts = 0));
+        await using var app = await PostgresServer.CreateAppAsync(services => services.AddClaudaliskDispatching(options => options.ConcurrencyAttempts = 0));
 
         var error = Assert.Throws<OptionsValidationException>(() => app.GetRequiredService<IOptions<DispatchingOptions>>().Value);
 

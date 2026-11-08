@@ -177,9 +177,9 @@ internal static class TestApp
     public static IServiceCollection AddTestApp(this IServiceCollection services, string connectionString)
     {
         services.AddLogging();
-        services.AddPersistence(connectionString);
-        services.AddModules(new ConfigurationBuilder().Build(), new OrdersModule(), new BillingModule(), new CheckoutModule());
-        services.AddDispatching();
+        services.AddClaudaliskPersistence(connectionString);
+        services.AddClaudaliskModules(new ConfigurationBuilder().Build(), new OrdersModule(), new BillingModule(), new CheckoutModule());
+        services.AddClaudaliskDispatching();
         services.AddSingleton<SendLog>();
         services.AddScoped<IPipelineStep, RecordingStep>();
         services.AddSingleton<AttemptLog>();

@@ -6,7 +6,7 @@ namespace Claudalisk.Modules;
 
 public static class ModuleServiceCollectionExtensions
 {
-    public static IMvcBuilder AddModules(this IServiceCollection services, IConfiguration configuration, params IModule[] modules)
+    public static IMvcBuilder AddClaudaliskModules(this IServiceCollection services, IConfiguration configuration, params IModule[] modules)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
@@ -19,7 +19,7 @@ public static class ModuleServiceCollectionExtensions
             .SingleOrDefault();
         if (catalog is { IsRegistering: true })
         {
-            throw new InvalidOperationException("AddModules cannot be called from a module's ConfigureServices while modules are being registered.");
+            throw new InvalidOperationException("AddClaudaliskModules cannot be called from a module's ConfigureServices while modules are being registered.");
         }
 
         var available = catalog is null ? new Dictionary<Type, IModule>() : new Dictionary<Type, IModule>(catalog.Registered);

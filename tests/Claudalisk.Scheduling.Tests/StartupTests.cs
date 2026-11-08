@@ -51,7 +51,7 @@ public sealed class StartupTests
     {
         var services = TestApp.Services(Connection, new FakeTimeProvider(TestApp.Start), new Refreshes(), new TestSettings(), new TestSchedule("hourly-refresh", "0 * * * *"));
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Scheduling:Schedules:0:Name"] = "hourly-refresh" }).Build();
-        services.AddScheduling(configuration);
+        services.AddClaudaliskScheduling(configuration);
         using var app = services.BuildServiceProvider();
 
         app.GetRequiredService<IStartupValidator>().Validate();
@@ -77,9 +77,9 @@ public sealed class StartupTests
     public void AJobsModuleWithTheSchedulersNameFailsAddScheduling()
     {
         var services = new ServiceCollection();
-        services.AddModuleJobs("Scheduling", "app_scheduling", _ => { });
+        services.AddClaudaliskModuleJobs("Scheduling", "app_scheduling", _ => { });
 
-        var failure = Assert.Throws<InvalidOperationException>(() => services.AddScheduling(new ConfigurationBuilder().Build()));
+        var failure = Assert.Throws<InvalidOperationException>(() => services.AddClaudaliskScheduling(new ConfigurationBuilder().Build()));
 
         Assert.Contains("'Scheduling' is reserved", failure.Message, StringComparison.Ordinal);
     }
@@ -88,9 +88,9 @@ public sealed class StartupTests
     public void AJobsModuleWithTheSchedulersNameFailsAddModuleJobsAfterAddScheduling()
     {
         var services = new ServiceCollection();
-        services.AddScheduling(new ConfigurationBuilder().Build());
+        services.AddClaudaliskScheduling(new ConfigurationBuilder().Build());
 
-        var failure = Assert.Throws<InvalidOperationException>(() => services.AddModuleJobs("Scheduling", "app_scheduling", _ => { }));
+        var failure = Assert.Throws<InvalidOperationException>(() => services.AddClaudaliskModuleJobs("Scheduling", "app_scheduling", _ => { }));
 
         Assert.Contains("'Scheduling' is reserved", failure.Message, StringComparison.Ordinal);
     }
@@ -100,15 +100,15 @@ public sealed class StartupTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddPersistence(Connection);
-        services.AddDispatching();
-        services.AddScheduling(new ConfigurationBuilder().Build());
+        services.AddClaudaliskPersistence(Connection);
+        services.AddClaudaliskDispatching();
+        services.AddClaudaliskScheduling(new ConfigurationBuilder().Build());
         await using var app = services.BuildServiceProvider();
 
         var failure = await Assert.ThrowsAsync<InvalidOperationException>(
             () => app.GetServices<IHostedService>().Single(service => service is SchedulingStartupCheck).StartAsync(TestContext.Current.CancellationToken));
 
-        Assert.Contains("AddJobs", failure.Message, StringComparison.Ordinal);
+        Assert.Contains("AddClaudaliskJobs", failure.Message, StringComparison.Ordinal);
     }
 
     [Fact]

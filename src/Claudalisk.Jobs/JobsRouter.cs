@@ -29,7 +29,7 @@ public static class JobsRouter
 {
     public const string Tag = "Jobs";
 
-    public static IEndpointRouteBuilder MapJobsRouter(this IEndpointRouteBuilder endpoints)
+    public static IEndpointRouteBuilder MapClaudaliskJobsRouter(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
         var jobs = endpoints.MapGroup("/api/jobs/{module}/{id:guid}").WithTags(Tag);

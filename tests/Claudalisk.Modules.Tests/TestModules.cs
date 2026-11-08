@@ -104,7 +104,7 @@ public sealed class InterfaceContractModule : IModule
 public sealed class ReentrantModule : IModule
 {
     public void ConfigureServices(IServiceCollection services, IConfiguration configuration) =>
-        services.AddModules(configuration, new StorageModule());
+        services.AddClaudaliskModules(configuration, new StorageModule());
 }
 
 public sealed class ThrowingModule : IModule

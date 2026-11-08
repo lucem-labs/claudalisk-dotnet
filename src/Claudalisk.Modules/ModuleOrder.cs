@@ -56,7 +56,7 @@ internal static class ModuleOrder
                 if (providers.Length == 0)
                 {
                     throw new InvalidOperationException(
-                        $"Module '{moduleType.FullName}' requires '{dependency.FullName}', but no module passed to AddModules provides it.");
+                        $"Module '{moduleType.FullName}' requires '{dependency.FullName}', but no module passed to AddClaudaliskModules provides it.");
                 }
 
                 Visit(providers[0]);

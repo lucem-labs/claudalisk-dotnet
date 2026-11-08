@@ -5,15 +5,15 @@ Cron schedules from configuration. Each fire is queued as a job in the scheduler
 ## Setup
 
 ```csharp
-services.AddPersistence(connectionString);
-services.AddModules(configuration, new CatalogModule());
-services.AddDispatching();
-services.AddJobs();
-services.AddPostgreSqlJobs();
-services.AddScheduling(configuration);
+services.AddClaudaliskPersistence(connectionString);
+services.AddClaudaliskModules(configuration, new CatalogModule());
+services.AddClaudaliskDispatching();
+services.AddClaudaliskJobs();
+services.AddClaudaliskPostgreSqlJobs();
+services.AddClaudaliskScheduling(configuration);
 ```
 
-`AddScheduling` needs `AddPersistence`, `AddDispatching`, `AddJobs` and a jobs transport such as `AddPostgreSqlJobs`. A hosted check fails startup naming `AddJobs` and the transport when they are missing. Calling `AddScheduling` twice is harmless: the second call returns before it binds the options again.
+`AddClaudaliskScheduling` needs `AddClaudaliskPersistence`, `AddClaudaliskDispatching`, `AddClaudaliskJobs` and a jobs transport such as `AddClaudaliskPostgreSqlJobs`. A hosted check fails startup naming `AddClaudaliskJobs` and the transport when they are missing. Calling `AddClaudaliskScheduling` twice is harmless: the second call returns before it binds the options again.
 
 A module marks a command as schedulable:
 
@@ -21,7 +21,7 @@ A module marks a command as schedulable:
 services.AddSchedulableCommand<RefreshCatalogCommand>("Catalog", "refresh-catalog");
 ```
 
-The module must be in the `ModuleCatalog` (compared as the kebab-case segment, as the jobs check does); startup fails naming the command, the module and the known modules otherwise. The check does nothing when no `AddModules` call registered a catalog.
+The module must be in the `ModuleCatalog` (compared as the kebab-case segment, as the jobs check does); startup fails naming the command, the module and the known modules otherwise. The check does nothing when no `AddClaudaliskModules` call registered a catalog.
 
 ## Configuration
 
@@ -58,11 +58,11 @@ Each schedule has a row in `scheduling.schedules` with `last_fired_timestamp`. A
 
 ## The outbox and delivery
 
-The scheduler has a jobs module named `Scheduling` (reserved: `AddScheduling` fails when an app already registered a jobs module with that name) with schema `scheduling`. It is library-owned: the module-name check of `AddModuleJobs` skips it, and `IJobQueue.EnqueueAsync` never resolves a command to it, so an app's own jobs of the same command type never land in the scheduler's table. Each schedulable command is a command job kind of that module, named after the schedulable command.
+The scheduler has a jobs module named `Scheduling` (reserved: `AddClaudaliskScheduling` fails when an app already registered a jobs module with that name) with schema `scheduling`. It is library-owned: the module-name check of `AddClaudaliskModuleJobs` skips it, and `IJobQueue.EnqueueAsync` never resolves a command to it, so an app's own jobs of the same command type never land in the scheduler's table. Each schedulable command is a command job kind of that module, named after the schedulable command.
 
 A fire is one unit of work: it updates the claim row and inserts the job through `IJobWriter.InsertAsync`, with the dedupe key `<schedule>:<fire time>`, the fire time in UTC in ISO 8601 `O` format. If the insert fails, the claim rolls back and the occurrence fires again on the next tick. One schedule failing does not stop the tick: the error is logged and the other schedules go on.
 
-The jobs workers of the module (default lane, one worker; change it with `AddModuleJobs("Scheduling", "scheduling", jobs => jobs.Lane("default", n))`) send the command through the dispatcher with the retries of the jobs library. Delivery is at least once: handlers of schedulable commands must be safe to run twice. The jobs library prunes finished scheduling jobs after `JobsOptions.FinishedJobRetention`.
+The jobs workers of the module (default lane, one worker; change it with `AddClaudaliskModuleJobs("Scheduling", "scheduling", jobs => jobs.Lane("default", n))`) send the command through the dispatcher with the retries of the jobs library. Delivery is at least once: handlers of schedulable commands must be safe to run twice. The jobs library prunes finished scheduling jobs after `JobsOptions.FinishedJobRetention`.
 
 ## Migrations
 
@@ -72,4 +72,4 @@ An app that runs `DatabaseInitializer.MigrateAsync` gets the Scheduling migratio
 2. `AddSchedulingJobs`: the `scheduling.jobs` table with `JobsTable.CreateSql`, the prune index and the dedupe index.
 3. `RenameLastFiredAt`: `last_fired_at` becomes `last_fired_timestamp`.
 
-The package references `Claudalisk.Jobs.PostgreSql` for the table SQL only. An app still chooses its transport through `AddPostgreSqlJobs`.
+The package references `Claudalisk.Jobs.PostgreSql` for the table SQL only. An app still chooses its transport through `AddClaudaliskPostgreSqlJobs`.

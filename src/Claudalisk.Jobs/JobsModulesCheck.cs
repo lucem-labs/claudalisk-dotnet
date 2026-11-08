@@ -21,7 +21,7 @@ internal sealed class JobsModulesCheck(JobsRegistry registry, IServiceProvider s
         return unknown.Length == 0
             ? Task.CompletedTask
             : throw new InvalidOperationException(
-                $"AddModuleJobs registered jobs for {string.Join(", ", unknown)}, which {(unknown.Length == 1 ? "is" : "are")} not in the module catalog. "
+                $"AddClaudaliskModuleJobs registered jobs for {string.Join(", ", unknown)}, which {(unknown.Length == 1 ? "is" : "are")} not in the module catalog. "
                 + $"The jobs module name must be the name of a module; known modules: {string.Join(", ", known.Order(StringComparer.Ordinal).Select(name => $"'{name}'"))}.");
     }
 

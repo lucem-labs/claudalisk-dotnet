@@ -1,17 +1,17 @@
 # Claudalisk.Modules
 
-`IModule`, `AddModules` and the module catalog. A module registers its own services and names the other modules it needs through marker classes.
+`IModule`, `AddClaudaliskModules` and the module catalog. A module registers its own services and names the other modules it needs through marker classes.
 
 ## Validation
 
-`AddModules` validates every module, including those from earlier calls, before it registers anything. It throws an `InvalidOperationException` naming the module type when:
+`AddClaudaliskModules` validates every module, including those from earlier calls, before it registers anything. It throws an `InvalidOperationException` naming the module type when:
 
 - a `Contract` or a dependency is not a sealed, non-abstract class
 - `Dependencies` is null, or contains a null entry
 - a dependency is not provided by any module
 - the dependencies form a cycle
 - two different module types provide the same `Contract`, even when no module depends on it
-- a module's `ConfigureServices` calls `AddModules`, directly or indirectly
+- a module's `ConfigureServices` calls `AddClaudaliskModules`, directly or indirectly
 
 ## Behaviour to know
 

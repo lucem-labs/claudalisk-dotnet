@@ -11,9 +11,9 @@ public static class PersistenceServiceCollectionExtensions
     public const string MigrationsHistoryTable = "__EFMigrationsHistory";
 
     internal const string MissingPersistenceMessage =
-        "Module DbContexts need the scope's connection from AddPersistence. Call AddPersistence when registering services.";
+        "Module DbContexts need the scope's connection from AddClaudaliskPersistence. Call AddClaudaliskPersistence when registering services.";
 
-    public static IServiceCollection AddPersistence(this IServiceCollection services, string connectionString)
+    public static IServiceCollection AddClaudaliskPersistence(this IServiceCollection services, string connectionString)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
@@ -23,7 +23,7 @@ public static class PersistenceServiceCollectionExtensions
             if (existing.ConnectionString != connectionString)
             {
                 throw new InvalidOperationException(
-                    "AddPersistence was already called with another connection string. A host has one database, so call AddPersistence once.");
+                    "AddClaudaliskPersistence was already called with another connection string. A host has one database, so call AddClaudaliskPersistence once.");
             }
 
             return services;
@@ -40,7 +40,7 @@ public static class PersistenceServiceCollectionExtensions
         return services;
     }
 
-    public static IServiceCollection AddMigrationBaseline(this IServiceCollection services, string schema, string migration, IReadOnlyList<string> replaces)
+    public static IServiceCollection AddClaudaliskMigrationBaseline(this IServiceCollection services, string schema, string migration, IReadOnlyList<string> replaces)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentException.ThrowIfNullOrWhiteSpace(schema);
@@ -83,7 +83,7 @@ public static class PersistenceServiceCollectionExtensions
         return services;
     }
 
-    public static IServiceCollection AddMovedMigrationHistory(this IServiceCollection services, string from, string to)
+    public static IServiceCollection AddClaudaliskMovedMigrationHistory(this IServiceCollection services, string from, string to)
     {
         ArgumentNullException.ThrowIfNull(services);
         MigrationHistoryMoves.Quote(from);
@@ -134,12 +134,12 @@ public static class PersistenceServiceCollectionExtensions
                 $"The schema '{schema}' is already registered for {owner.ContextType.Name}, so {typeof(TContext).Name} cannot use it. Each module context needs its own schema.");
         }
 
-        services.AddDbContext<TContext>((provider, options) => options.UseModuleSchema(provider, schema));
+        services.AddDbContext<TContext>((provider, options) => options.UseClaudaliskModuleSchema(provider, schema));
         services.AddSingleton(new ModuleDbContextRegistration(typeof(TContext), schema));
         return services;
     }
 
-    public static DbContextOptionsBuilder UseModuleSchema(this DbContextOptionsBuilder options, IServiceProvider services, string schema)
+    public static DbContextOptionsBuilder UseClaudaliskModuleSchema(this DbContextOptionsBuilder options, IServiceProvider services, string schema)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(services);

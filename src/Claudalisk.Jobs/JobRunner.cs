@@ -90,13 +90,13 @@ public sealed partial class JobRunner
                 case JobKindType.Command:
                     var unitOfWork = scope.ServiceProvider.GetService<IUnitOfWork>()
                         ?? throw new InvalidOperationException(
-                            $"Job kind '{kind.Name}' is not a command that runs in a unit of work; register AddJobs after AddDispatching and AddPersistence.");
+                            $"Job kind '{kind.Name}' is not a command that runs in a unit of work; register AddClaudaliskJobs after AddClaudaliskDispatching and AddClaudaliskPersistence.");
                     var dispatcher = scope.ServiceProvider.GetRequiredService<IDispatcher>();
                     await unitOfWork.RunAsync(token => dispatcher.SendAsync(payload, token).AsTask(), cancel.Token).ConfigureAwait(false);
                     if (!context.Completed)
                     {
                         throw new InvalidOperationException(
-                            $"Job kind '{kind.Name}' is not a command that runs in a unit of work; register AddJobs after AddDispatching and AddPersistence.");
+                            $"Job kind '{kind.Name}' is not a command that runs in a unit of work; register AddClaudaliskJobs after AddClaudaliskDispatching and AddClaudaliskPersistence.");
                     }
 
                     break;

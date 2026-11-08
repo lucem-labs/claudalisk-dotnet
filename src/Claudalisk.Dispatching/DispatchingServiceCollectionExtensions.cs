@@ -8,7 +8,7 @@ namespace Claudalisk.Dispatching;
 
 public static class DispatchingServiceCollectionExtensions
 {
-    public static IServiceCollection AddDispatching(this IServiceCollection services, Action<DispatchingOptions>? configure = null)
+    public static IServiceCollection AddClaudaliskDispatching(this IServiceCollection services, Action<DispatchingOptions>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(services);
         var state = services.Select(descriptor => descriptor.ImplementationInstance).OfType<DispatchingState>().SingleOrDefault();
