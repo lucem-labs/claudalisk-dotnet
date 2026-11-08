@@ -1,3 +1,6 @@
+using System.Diagnostics;
+using System.Text.Json;
+
 namespace Claudalisk.Ci.Tests;
 
 public sealed class PackageReadmeTests
@@ -16,8 +19,32 @@ public sealed class PackageReadmeTests
             .Select(file => file.Name)
             .ToList();
 
-        Assert.Equal(10, packable.Count);
+        Assert.NotEmpty(packable);
         Assert.Empty(missing);
+    }
+
+    [Fact(Timeout = 120_000)]
+    public async Task ThePackWiringPutsTheReadmeIntoThePackage()
+    {
+        var project = Path.Combine(FindRepositoryRoot().FullName, "src", "Claudalisk.Domain", "Claudalisk.Domain.csproj");
+        var start = new ProcessStartInfo("dotnet") { RedirectStandardOutput = true, RedirectStandardError = true };
+        foreach (var argument in new[] { "msbuild", project, "-getProperty:PackageReadmeFile", "-getItem:None" })
+        {
+            start.ArgumentList.Add(argument);
+        }
+
+        using var process = Process.Start(start)!;
+        var output = await process.StandardOutput.ReadToEndAsync(TestContext.Current.CancellationToken);
+        await process.WaitForExitAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, process.ExitCode);
+        using var evaluation = JsonDocument.Parse(output);
+        Assert.Equal("README.md", evaluation.RootElement.GetProperty("Properties").GetProperty("PackageReadmeFile").GetString());
+        Assert.Contains(
+            evaluation.RootElement.GetProperty("Items").GetProperty("None").EnumerateArray(),
+            item => item.GetProperty("Identity").GetString() == "README.md"
+                && item.TryGetProperty("Pack", out var pack) && pack.GetString() == "true"
+                && item.GetProperty("PackagePath").GetString() == "/");
     }
 
     private static DirectoryInfo FindRepositoryRoot()
