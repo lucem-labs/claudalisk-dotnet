@@ -6,6 +6,8 @@ internal sealed class UnitOfWork(DbSession session) : IUnitOfWork
 {
     public bool IsActive => session.Transaction is not null;
 
+    public bool HasForeignTransaction => session.Transaction is null && session.HasContextOwnedTransaction;
+
     public async Task<T> RunAsync<T>(Func<CancellationToken, Task<T>> work, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(work);

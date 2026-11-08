@@ -102,6 +102,8 @@ public sealed class FakeUnitOfWork : IUnitOfWork
 {
     public bool IsActive { get; private set; }
 
+    public bool HasForeignTransaction => false;
+
     public async Task<T> RunAsync<T>(Func<CancellationToken, Task<T>> work, CancellationToken cancellationToken = default)
     {
         IsActive = true;

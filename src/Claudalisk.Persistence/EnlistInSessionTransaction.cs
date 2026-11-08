@@ -7,8 +7,29 @@ using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Claudalisk.Persistence;
 
-internal sealed class EnlistInSessionTransaction(DbSession session) : SaveChangesInterceptor, IDbCommandInterceptor
+internal sealed class EnlistInSessionTransaction(DbSession session) : SaveChangesInterceptor, IDbCommandInterceptor, IDbTransactionInterceptor
 {
+    public DbTransaction TransactionStarted(DbConnection connection, TransactionEndEventData eventData, DbTransaction result)
+    {
+        RememberOwnTransaction(eventData.Context);
+        return result;
+    }
+
+    public ValueTask<DbTransaction> TransactionStartedAsync(
+        DbConnection connection, TransactionEndEventData eventData, DbTransaction result, CancellationToken cancellationToken = default)
+    {
+        RememberOwnTransaction(eventData.Context);
+        return ValueTask.FromResult(result);
+    }
+
+    private void RememberOwnTransaction(DbContext? context)
+    {
+        if (context is not null && !session.ContextsThatBeganTransactions.Contains(context))
+        {
+            session.ContextsThatBeganTransactions.Add(context);
+        }
+    }
+
     public InterceptionResult<DbCommand> CommandCreating(CommandCorrelatedEventData eventData, InterceptionResult<DbCommand> result)
     {
         Enlist(eventData.Context);
