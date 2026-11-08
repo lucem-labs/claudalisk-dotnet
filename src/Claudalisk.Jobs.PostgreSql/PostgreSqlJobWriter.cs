@@ -10,14 +10,32 @@ internal sealed class PostgreSqlJobWriter(IScopeConnection scope) : IJobWriter
 {
     public async Task<Guid> InsertAsync(JobsModule module, NewJob job, CancellationToken cancellationToken)
     {
+        if (job.Options.DedupeKey is not null && scope.Transaction is null)
+        {
+            if (scope.Connection.State != ConnectionState.Open)
+            {
+                await scope.Connection.OpenAsync(cancellationToken);
+            }
+
+            await using var local = await scope.Connection.BeginTransactionAsync(cancellationToken);
+            var inserted = await InsertAsync(module, job, local, cancellationToken);
+            await local.CommitAsync(cancellationToken);
+            return inserted;
+        }
+
+        return await InsertAsync(module, job, scope.Transaction, cancellationToken);
+    }
+
+    private async Task<Guid> InsertAsync(JobsModule module, NewJob job, NpgsqlTransaction? transaction, CancellationToken cancellationToken)
+    {
         var table = $"{JobsTable.Quote(module.Schema)}.jobs";
         var id = Guid.CreateVersion7();
         if (job.Options.DedupeKey is not null)
         {
-            await using var gate = await CommandAsync("SELECT pg_advisory_xact_lock(hashtextextended(@lockKey, 0))", cancellationToken);
+            await using var gate = await CommandAsync(transaction, "SELECT pg_advisory_xact_lock(hashtextextended(@lockKey, 0))", cancellationToken);
             gate.Parameters.AddWithValue("lockKey", JobsTable.DedupeLockKey(module, job.Kind, job.Options.DedupeKey));
             await gate.ExecuteNonQueryAsync(cancellationToken);
-            await using var supersede = await CommandAsync(
+            await using var supersede = await CommandAsync(transaction,
                 $"""
                 UPDATE {table}
                 SET status = 'canceled', finished_at = now(),
@@ -30,7 +48,7 @@ internal sealed class PostgreSqlJobWriter(IScopeConnection scope) : IJobWriter
             await supersede.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        await using var insert = await CommandAsync(
+        await using var insert = await CommandAsync(transaction,
             $"""
             INSERT INTO {table} (id, kind, payload, lane, status, max_attempts, dedupe_key, not_before)
             VALUES (@id, @kind, @payload::jsonb, @lane, 'queued', @max, @key, coalesce(@notBefore, now()));
@@ -118,13 +136,15 @@ internal sealed class PostgreSqlJobWriter(IScopeConnection scope) : IJobWriter
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private async Task<NpgsqlCommand> CommandAsync(string sql, CancellationToken cancellationToken)
+    private Task<NpgsqlCommand> CommandAsync(string sql, CancellationToken cancellationToken) => CommandAsync(scope.Transaction, sql, cancellationToken);
+
+    private async Task<NpgsqlCommand> CommandAsync(NpgsqlTransaction? transaction, string sql, CancellationToken cancellationToken)
     {
         if (scope.Connection.State != ConnectionState.Open)
         {
             await scope.Connection.OpenAsync(cancellationToken);
         }
 
-        return new NpgsqlCommand(sql, scope.Connection, scope.Transaction);
+        return new NpgsqlCommand(sql, scope.Connection, transaction);
     }
 }

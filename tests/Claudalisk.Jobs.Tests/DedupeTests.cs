@@ -136,6 +136,43 @@ public sealed class DedupeTests
         return (transport, orders, running, newer);
     }
 
+    [Fact(Timeout = 60_000)]
+    public async Task TwoConcurrentEnqueuesOutsideAUnitOfWorkLeaveOneQueuedJobAndNoError()
+    {
+        await using var app = await PostgresServer.CreateAppAsync();
+        await using var holder = await app.GetRequiredService<NpgsqlDataSource>().OpenConnectionAsync(TestContext.Current.CancellationToken);
+        await using (var hold = new NpgsqlCommand("SELECT pg_advisory_lock(hashtextextended(@key, 0))", holder))
+        {
+            hold.Parameters.AddWithValue("key", PostgreSql.JobsTable.DedupeLockKey(Registry(app).Find("Orders")!, "flaky", "rebuild"));
+            await hold.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        }
+
+        var options = new JobOptions(DedupeKey: "rebuild");
+        var both = new[] { EnqueueOutsideAsync(app, options), EnqueueOutsideAsync(app, options) };
+        var polls = 0;
+        while (!Equals(await ScalarAsync(app, WaitingOnAdvisoryLock), 2L))
+        {
+            Assert.True(++polls <= 2000, "The enqueues never both blocked on the advisory lock.");
+            await Task.Delay(10, TestContext.Current.CancellationToken);
+        }
+
+        await using (var release = new NpgsqlCommand("SELECT pg_advisory_unlock_all()", holder))
+        {
+            await release.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        }
+
+        await Task.WhenAll(both);
+
+        Assert.Equal(1L, await ScalarAsync(app, "SELECT count(*) FROM orders.jobs WHERE dedupe_key = 'rebuild' AND status = 'queued'"));
+        Assert.Equal(1L, await ScalarAsync(app, "SELECT count(*) FROM orders.jobs WHERE dedupe_key = 'rebuild' AND status = 'canceled'"));
+    }
+
+    private static async Task<JobReference> EnqueueOutsideAsync(IServiceProvider app, JobOptions options)
+    {
+        await using var scope = app.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<IJobQueue>().EnqueueAsync(new FlakyCommand(0), options, TestContext.Current.CancellationToken);
+    }
+
     [Fact]
     public async Task TheRunningIndexExistsAfterTheMigrations()
     {
