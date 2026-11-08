@@ -2,7 +2,7 @@ namespace Claudalisk.Scheduling;
 
 public sealed record SchedulableCommand(string Name, string Module, Type CommandType);
 
-public sealed class SchedulableCommands
+internal sealed class SchedulableCommands
 {
     private readonly Dictionary<string, SchedulableCommand> _commands = new(StringComparer.Ordinal);
 

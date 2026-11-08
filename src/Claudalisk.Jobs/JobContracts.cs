@@ -104,9 +104,11 @@ public interface IEventPublisher
     Task PublishAsync(object integrationEvent, CancellationToken cancellationToken = default);
 }
 
-public interface IJobTransport
+internal interface IJobTransport
 {
-    Task<ClaimedJob?> ClaimAsync(JobsModule module, string lane, TimeSpan staleAfter, CancellationToken cancellationToken);
+    Task<ClaimedJob?> ClaimAsync(JobsModule module, string lane, CancellationToken cancellationToken);
+
+    Task SweepStaleAsync(JobsModule module, TimeSpan staleAfter, CancellationToken cancellationToken);
 
     Task WaitForWorkAsync(JobsModule module, string lane, TimeSpan timeout, CancellationToken cancellationToken);
 
@@ -131,7 +133,7 @@ public interface IJobTransport
     Task<int> DeleteFinishedBeforeAsync(JobsModule module, TimeSpan retention, CancellationToken cancellationToken);
 }
 
-public interface IJobWriter
+internal interface IJobWriter
 {
     Task<Guid> InsertAsync(JobsModule module, NewJob job, CancellationToken cancellationToken);
 

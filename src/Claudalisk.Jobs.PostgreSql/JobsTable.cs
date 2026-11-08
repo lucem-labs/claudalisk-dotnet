@@ -50,6 +50,24 @@ public static partial class JobsTable
 
     public static string DropRunningIndexSql(string schema) => $"DROP INDEX {Quote(schema)}.ix_jobs_running;";
 
+    public static string CreateClaimIndexSql(string schema)
+    {
+        var s = Quote(schema);
+        return $"""
+            CREATE INDEX ix_jobs_claim_queued ON {s}.jobs (lane, not_before, created_at) WHERE status = 'queued';
+            DROP INDEX {s}.ix_jobs_claim;
+            """;
+    }
+
+    public static string DropClaimIndexSql(string schema)
+    {
+        var s = Quote(schema);
+        return $"""
+            CREATE INDEX ix_jobs_claim ON {s}.jobs (lane, status, not_before);
+            DROP INDEX {s}.ix_jobs_claim_queued;
+            """;
+    }
+
     public static string CreateDedupeIndexSql(string schema)
     {
         var s = Quote(schema);

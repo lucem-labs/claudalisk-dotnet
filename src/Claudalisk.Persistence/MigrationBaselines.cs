@@ -26,7 +26,7 @@ public sealed class MigrationBaselineException : InvalidOperationException
     }
 }
 
-public sealed partial class MigrationBaselines(IServiceProvider services)
+internal sealed partial class MigrationBaselines(IServiceProvider services)
 {
     private readonly ILogger logger = services.GetService<ILogger<MigrationBaselines>>() ?? NullLogger<MigrationBaselines>.Instance;
 

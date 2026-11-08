@@ -25,7 +25,7 @@ public sealed class MigrationHistoryMoveException : InvalidOperationException
     }
 }
 
-public sealed partial class MigrationHistoryMoves(IServiceProvider services)
+internal sealed partial class MigrationHistoryMoves(IServiceProvider services)
 {
     private readonly ILogger logger = services.GetService<ILogger<MigrationHistoryMoves>>() ?? NullLogger<MigrationHistoryMoves>.Instance;
 

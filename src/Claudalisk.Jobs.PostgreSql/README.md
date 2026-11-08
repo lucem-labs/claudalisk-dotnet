@@ -26,7 +26,8 @@ migrationBuilder.Sql(JobsTable.CreateSql("ordering"));
 The schema must be a lower-case identifier (letters, digits and underscores, not starting with a digit), or the helpers throw `ArgumentException`. `CreateSql` never changes. Later changes are separate helpers, each with a drop counterpart:
 
 - `CreatePruneIndexSql` / `DropPruneIndexSql`
-- `CreateRunningIndexSql` / `DropRunningIndexSql`: add it in every module schema, because each claim searches running rows for stale heartbeats
+- `CreateRunningIndexSql` / `DropRunningIndexSql`: add it in every module schema, because the stale sweep searches running rows for old heartbeats
+- `CreateClaimIndexSql` / `DropClaimIndexSql`: replaces the claim index with a partial one that matches the claim order
 - `CreateDedupeIndexSql` / `DropDedupeIndexSql`
 
 `DropDedupeIndexSql` does not restore the queued duplicates that `CreateDedupeIndexSql` canceled. The `Claudalisk.Jobs` README explains delivery, retries, deduplication and lanes.

@@ -35,7 +35,7 @@ public sealed class JobHistoryTests
         var finished = await EnqueueAsync(app, new FlakyCommand(0));
         await Runner(app).RunUntilIdleAsync("Orders", cancellationToken: TestContext.Current.CancellationToken);
         var running = await EnqueueAsync(app, new FlakyCommand(0));
-        await app.GetRequiredService<IJobTransport>().ClaimAsync(Registry(app).Find("Orders")!, JobOptions.DefaultLane, TimeSpan.FromMinutes(2), TestContext.Current.CancellationToken);
+        await app.GetRequiredService<IJobTransport>().ClaimAsync(Registry(app).Find("Orders")!, JobOptions.DefaultLane, TestContext.Current.CancellationToken);
         var queued = await EnqueueAsync(app, new FlakyCommand(0));
 
         Assert.Equal(

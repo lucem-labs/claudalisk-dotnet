@@ -31,8 +31,10 @@ public sealed class HeartbeatTests
             }
         }
 
-        public Task<ClaimedJob?> ClaimAsync(JobsModule module, string lane, TimeSpan staleAfter, CancellationToken cancellationToken) =>
-            inner.ClaimAsync(module, lane, staleAfter, cancellationToken);
+        public Task<ClaimedJob?> ClaimAsync(JobsModule module, string lane, CancellationToken cancellationToken) =>
+            inner.ClaimAsync(module, lane, cancellationToken);
+
+        public Task SweepStaleAsync(JobsModule module, TimeSpan staleAfter, CancellationToken cancellationToken) => Task.CompletedTask;
 
         public Task WaitForWorkAsync(JobsModule module, string lane, TimeSpan timeout, CancellationToken cancellationToken) =>
             inner.WaitForWorkAsync(module, lane, timeout, cancellationToken);

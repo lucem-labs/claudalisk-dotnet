@@ -112,14 +112,35 @@ public sealed class DedupeTests
     {
         await using var app = await PostgresServer.CreateAppAsync();
         var (transport, orders, older, newer) = await RunningWithANewerTwinAsync(app);
-        var reclaimed = await transport.ClaimAsync(orders, JobOptions.DefaultLane, TimeSpan.FromMinutes(2), TestContext.Current.CancellationToken);
+        var reclaimed = await transport.ClaimAsync(orders, JobOptions.DefaultLane, TestContext.Current.CancellationToken);
         await ScalarAsync(app, "UPDATE orders.jobs SET heartbeat_at = now() - interval '3 minutes' WHERE status = 'running'");
 
-        var claimed = await transport.ClaimAsync(orders, JobOptions.DefaultLane, TimeSpan.FromMinutes(2), TestContext.Current.CancellationToken);
+        await transport.SweepStaleAsync(orders, TimeSpan.FromMinutes(2), TestContext.Current.CancellationToken);
+        var claimed = await transport.ClaimAsync(orders, JobOptions.DefaultLane, TestContext.Current.CancellationToken);
 
         Assert.Equal((newer.Id, newer.Id), (reclaimed!.Id, claimed!.Id));
         var old = (await JobAsync(app, "Orders", older.Id))!;
         Assert.Equal((JobStatus.Canceled, "/problems/jobs/superseded"), (old.Status, old.LastError!.Type));
+    }
+
+    [Fact]
+    public async Task TheClaimUsesThePartialIndexWithoutSorting()
+    {
+        await using var app = await PostgresServer.CreateAppAsync();
+        await ScalarAsync(app, """
+            INSERT INTO orders.jobs (id, kind, payload, lane, status, max_attempts, not_before)
+            SELECT gen_random_uuid(), 'k', '{}'::jsonb, CASE WHEN i % 2 = 0 THEN 'default' ELSE 'slow' END, CASE WHEN i % 10 = 0 THEN 'queued' ELSE 'succeeded' END, 1, now() - i * interval '1 second'
+            FROM generate_series(1, 20000) AS i;
+            ANALYZE orders.jobs;
+            """);
+
+        var plan = (string)(await ScalarAsync(app, """
+            EXPLAIN (FORMAT JSON) SELECT id FROM orders.jobs WHERE lane = 'default' AND status = 'queued' AND not_before <= now()
+            ORDER BY not_before, created_at FOR UPDATE SKIP LOCKED LIMIT 1
+            """))!;
+
+        Assert.Contains("ix_jobs_claim_queued", plan, StringComparison.Ordinal);
+        Assert.DoesNotContain("Sort", plan, StringComparison.Ordinal);
     }
 
     private const string WaitingOnAdvisoryLock =
@@ -131,7 +152,7 @@ public sealed class DedupeTests
         await EnqueueAsync(app, new FlakyCommand(0), options);
         var transport = app.GetRequiredService<IJobTransport>();
         var orders = Registry(app).Find("Orders")!;
-        var running = (await transport.ClaimAsync(orders, JobOptions.DefaultLane, TimeSpan.FromMinutes(2), TestContext.Current.CancellationToken))!;
+        var running = (await transport.ClaimAsync(orders, JobOptions.DefaultLane, TestContext.Current.CancellationToken))!;
         var newer = await EnqueueAsync(app, new FlakyCommand(0), options);
         return (transport, orders, running, newer);
     }

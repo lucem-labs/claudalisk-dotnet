@@ -56,7 +56,7 @@ public sealed partial class JobRunner
     public async Task<bool> RunNextAsync(string module, string lane = JobOptions.DefaultLane, CancellationToken cancellationToken = default)
     {
         var jobs = _registry.Find(module) ?? throw new InvalidOperationException($"Module '{module}' has no jobs.");
-        var claimed = await _transport.ClaimAsync(jobs, lane, _options.StaleAfter, cancellationToken);
+        var claimed = await _transport.ClaimAsync(jobs, lane, cancellationToken);
         if (claimed is null)
         {
             return false;
@@ -156,6 +156,12 @@ public sealed partial class JobRunner
             await heartbeat;
             await cancelWatch;
         }
+    }
+
+    public async Task SweepStaleAsync(string module, CancellationToken cancellationToken = default)
+    {
+        var jobs = _registry.Find(module) ?? throw new InvalidOperationException($"Module '{module}' has no jobs.");
+        await _transport.SweepStaleAsync(jobs, _options.StaleAfter, cancellationToken);
     }
 
     public async Task<int> PruneAsync(string module, CancellationToken cancellationToken = default)

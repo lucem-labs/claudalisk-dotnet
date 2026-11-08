@@ -54,8 +54,8 @@ public static class JobsServiceCollectionExtensions
             .Validate(
                 options => options.CancelCheckInterval > TimeSpan.Zero && options.PruneInterval > TimeSpan.Zero && options.FinishedJobRetention > TimeSpan.Zero
                     && options.RetryAfterMaxDelay > TimeSpan.Zero && options.HeartbeatInterval > TimeSpan.Zero
-                    && options.StaleAfter > TimeSpan.Zero && options.RetryMaxDelay > TimeSpan.Zero,
-                "JobsOptions.CancelCheckInterval, PruneInterval, FinishedJobRetention, RetryAfterMaxDelay, HeartbeatInterval, StaleAfter and RetryMaxDelay must be positive.")
+                    && options.StaleAfter > TimeSpan.Zero && options.StaleSweepInterval > TimeSpan.Zero && options.RetryMaxDelay > TimeSpan.Zero,
+                "JobsOptions.CancelCheckInterval, PruneInterval, FinishedJobRetention, RetryAfterMaxDelay, HeartbeatInterval, StaleAfter, StaleSweepInterval and RetryMaxDelay must be positive.")
             .Validate(options => options.PollInterval > TimeSpan.Zero || options.PollInterval == Timeout.InfiniteTimeSpan, "JobsOptions.PollInterval must be positive or infinite.")
             .Validate(options => options.RetryBaseDelay >= TimeSpan.Zero, "JobsOptions.RetryBaseDelay must not be negative.")
             .ValidateOnStart();

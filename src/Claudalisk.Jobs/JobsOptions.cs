@@ -16,6 +16,8 @@ public sealed class JobsOptions
 
     public TimeSpan StaleAfter { get; set; } = TimeSpan.FromMinutes(2);
 
+    public TimeSpan StaleSweepInterval { get; set; } = TimeSpan.FromMinutes(1);
+
     public TimeSpan RetryBaseDelay { get; set; } = TimeSpan.FromSeconds(2);
 
     public TimeSpan RetryMaxDelay { get; set; } = TimeSpan.FromMinutes(5);

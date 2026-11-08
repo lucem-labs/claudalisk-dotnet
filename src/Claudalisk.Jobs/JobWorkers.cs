@@ -14,26 +14,32 @@ internal sealed partial class JobWorkers(JobRunner runner, IJobTransport transpo
             return Task.CompletedTask;
         }
 
-        var workers = registry.Modules.Select(module => PruneAsync(module, stoppingToken))
+        var workers = registry.Modules.SelectMany(module => new[] { PruneAsync(module, stoppingToken), SweepAsync(module, stoppingToken) })
             .Concat(registry.Modules.SelectMany(module => module.Lanes.SelectMany(lane => Enumerable.Range(0, lane.Value).Select(_ => WorkAsync(module, lane.Key, stoppingToken)))))
             .ToArray();
         return Task.WhenAll(workers);
     }
 
-    private async Task PruneAsync(JobsModule module, CancellationToken stoppingToken)
+    private Task PruneAsync(JobsModule module, CancellationToken stoppingToken) =>
+        RepeatAsync(module, options.Value.PruneInterval, LogPruneFailed, token => runner.PruneAsync(module.Name, token), stoppingToken);
+
+    private Task SweepAsync(JobsModule module, CancellationToken stoppingToken) =>
+        RepeatAsync(module, options.Value.StaleSweepInterval, LogSweepFailed, token => runner.SweepStaleAsync(module.Name, token), stoppingToken);
+
+    private async Task RepeatAsync(JobsModule module, TimeSpan interval, Action<ILogger, Exception, string> logFailed, Func<CancellationToken, Task> work, CancellationToken stoppingToken)
     {
-        using var timer = new PeriodicTimer(options.Value.PruneInterval, time);
+        using var timer = new PeriodicTimer(interval, time);
         try
         {
             while (await timer.WaitForNextTickAsync(stoppingToken))
             {
                 try
                 {
-                    await runner.PruneAsync(module.Name, stoppingToken);
+                    await work(stoppingToken);
                 }
                 catch (Exception exception) when (exception is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
                 {
-                    LogPruneFailed(logger, exception, module.Name);
+                    logFailed(logger, exception, module.Name);
                 }
             }
         }
@@ -77,4 +83,7 @@ internal sealed partial class JobWorkers(JobRunner runner, IJobTransport transpo
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Deleting the finished {Module} jobs failed; it tries again on the next interval")]
     private static partial void LogPruneFailed(ILogger logger, Exception exception, string module);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Sweeping the stale {Module} jobs failed; it tries again on the next interval")]
+    private static partial void LogSweepFailed(ILogger logger, Exception exception, string module);
 }

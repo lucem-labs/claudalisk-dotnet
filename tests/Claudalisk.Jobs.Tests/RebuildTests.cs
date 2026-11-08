@@ -15,7 +15,7 @@ public sealed class RebuildTests
         var first = await CanceledOrderAsync(app);
         var second = await CanceledOrderAsync(app);
         var billing = Registry(app).Find("Billing")!;
-        var running = await app.GetRequiredService<IJobTransport>().ClaimAsync(billing, "refunds", TimeSpan.FromMinutes(2), TestContext.Current.CancellationToken);
+        var running = await app.GetRequiredService<IJobTransport>().ClaimAsync(billing, "refunds", TestContext.Current.CancellationToken);
         var unseen = Guid.NewGuid();
         await PublishAsync(app, new OrderCanceled(unseen));
         await ScalarAsync(app, "UPDATE billing.jobs SET not_before = now() + interval '1 hour' WHERE status = 'queued'");
