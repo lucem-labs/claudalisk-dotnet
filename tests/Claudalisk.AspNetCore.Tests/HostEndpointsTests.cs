@@ -2,6 +2,8 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Claudalisk.AspNetCore.Tests;
 
@@ -47,6 +49,18 @@ public sealed class HostEndpointsTests
 
         Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+    }
+
+    [Fact]
+    public async Task AnUnavailableDatabaseIsLoggedAtWarningWithoutAnException()
+    {
+        var log = new LogCollector();
+        await using var app = await TestApp.StartAsync(connected: false, configureServices: services => services.AddLogging(logging => logging.AddProvider(log)));
+
+        await app.GetTestClient().GetAsync("/api/health", TestContext.Current.CancellationToken);
+
+        var entry = Assert.Single(log.Entries, entry => entry.Category == typeof(HealthEndpoint).FullName);
+        Assert.Equal((LogLevel.Warning, false), (entry.Level, entry.HasException));
     }
 
     [Fact]
