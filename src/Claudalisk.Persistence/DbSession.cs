@@ -12,9 +12,8 @@ internal sealed class DbSession(NpgsqlDataSource dataSource) : IScopeConnection,
 
     public List<DbContext> EnlistedContexts { get; } = [];
 
-    public Exception? ReleaseEnlistedContexts(NpgsqlTransaction transaction)
+    public void ReleaseEnlistedContexts(NpgsqlTransaction transaction)
     {
-        Exception? failure = null;
         foreach (var context in EnlistedContexts)
         {
             try
@@ -24,17 +23,12 @@ internal sealed class DbSession(NpgsqlDataSource dataSource) : IScopeConnection,
                     context.Database.UseTransaction(null);
                 }
             }
-            catch (ObjectDisposedException)
+            catch (Exception exception) when (exception is not OutOfMemoryException)
             {
-            }
-            catch (Exception exception)
-            {
-                failure ??= exception;
             }
         }
 
         EnlistedContexts.Clear();
-        return failure;
     }
 
     public void Dispose() => Connection.Dispose();

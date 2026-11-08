@@ -336,6 +336,51 @@ public sealed class UnitOfWorkTests
         Assert.Null(shared.Transaction);
     }
 
+    private sealed class FailingTransactionManager : Microsoft.EntityFrameworkCore.Storage.IDbContextTransactionManager
+    {
+        public Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? CurrentTransaction => throw new InvalidOperationException("The context cannot release its transaction.");
+
+        public void ResetState() => throw new NotSupportedException();
+
+        public Task ResetStateAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction BeginTransaction() => throw new NotSupportedException();
+
+        public Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public void CommitTransaction() => throw new NotSupportedException();
+
+        public Task CommitTransactionAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public void RollbackTransaction() => throw new NotSupportedException();
+
+        public Task RollbackTransactionAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    private sealed class UnreleasableContext() : DbContext(new DbContextOptionsBuilder<UnreleasableContext>()
+        .UseNpgsql("Host=unused")
+        .ReplaceService<Microsoft.EntityFrameworkCore.Storage.IDbContextTransactionManager, FailingTransactionManager>()
+        .Options);
+
+    [Fact]
+    public async Task AContextThatCannotBeReleasedDoesNotFailACommittedUnitOfWork()
+    {
+        await using var app = await PostgresServer.CreateAppAsync();
+        await using var scope = app.CreateAsyncScope();
+        var (unitOfWork, orders, _) = Resolve(scope.ServiceProvider);
+        var session = scope.ServiceProvider.GetRequiredService<DbSession>();
+        await using var unreleasable = new UnreleasableContext();
+
+        await unitOfWork.RunAsync(async token =>
+        {
+            await orders.PlaceAsync(Guid.NewGuid(), "A-1", token);
+            session.EnlistedContexts.Add(unreleasable);
+        }, TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, await orders.CountAsync(TestContext.Current.CancellationToken));
+        Assert.Empty(session.EnlistedContexts);
+    }
+
     [Fact]
     public async Task ALongLivedScopeKeepsNoEnlistedContextsBetweenUnitsOfWork()
     {
