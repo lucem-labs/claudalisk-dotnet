@@ -10,7 +10,7 @@ Jobs are settled in the same unit of work as the handler's writes: every command
 
 ## The completion guard
 
-`CompleteAsync` updates the row only `WHERE id = @id AND status = 'running' AND attempts = @attempt`, where `@attempt` is the attempt this run claimed (`IJobContext.Attempt`). When it updates no row, the run was settled by someone else: a rebuild marked the delivery succeeded, the job was canceled, or the stale sweep requeued it and another worker claimed it. The guard covers the completing unit of work only: for a batch job taken over by another worker, the old run's earlier batches and checkpoints can still commit (tracked in issue #45). The writer returns `false`, the runner throws an internal exception that rolls back the handler's writes in the unit of work, leaves the row exactly as it is, writes no retry or failure, and logs at Information.
+`CompleteAsync` updates the row only `WHERE id = @id AND status = 'running' AND attempts = @attempt`, where `@attempt` is the attempt this run claimed (`IJobContext.Attempt`). When it updates no row, the run was settled by someone else: a rebuild marked the delivery succeeded, the job was canceled, or the stale sweep requeued it and another worker claimed it. Every other write from a run carries the same attempt: the heartbeat, progress, retry, cancel and requeue do nothing once the run no longer owns the row, and a batch's checkpoint has the same guard, so a batch of a run that was taken over rolls back. The writer returns `false`, the runner throws an internal exception that rolls back the handler's writes in the unit of work, leaves the row exactly as it is, writes no retry or failure, and logs at Information.
 
 ## Retries
 
@@ -32,7 +32,7 @@ The heartbeat and the cancel check keep running after a failed call; each failur
 
 `JobOptions.DedupeKey` replaces the queued job of the same kind and key: the older queued row is canceled with `/problems/jobs/superseded`. The same key on a different kind does not touch the other job. A running job is not replaced.
 
-Enqueues take `pg_advisory_xact_lock` on (schema, kind, key) before they supersede, so two concurrent enqueues serialise and the second supersedes the first's committed row. A partial unique index `ux_jobs_dedupe (kind, dedupe_key) WHERE dedupe_key IS NOT NULL AND status = 'queued'` is the backstop. A retry, a shutdown requeue or the stale sweep that would put a job back beside a newer queued job of the same kind and key cancels it as superseded instead; among several stale running jobs of one key only the newest is requeued.
+Enqueues take `pg_advisory_xact_lock` on (schema, kind, key) before they supersede, so two concurrent enqueues serialise and the second supersedes the first's committed row. A partial unique index `ux_jobs_dedupe (kind, dedupe_key) WHERE dedupe_key IS NOT NULL AND status = 'queued'` is the backstop. A retry, a shutdown requeue or the stale sweep takes the same lock, and if it would put a job back beside a newer queued job of the same kind and key it cancels it as superseded instead; among several stale running jobs of one key only the newest is requeued.
 
 ## Lanes and the stale sweep
 

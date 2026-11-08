@@ -70,8 +70,8 @@ public sealed partial class JobRunner
     {
         using var cancel = CancellationTokenSource.CreateLinkedTokenSource(stopping);
         using var heartbeatStop = new CancellationTokenSource();
-        var heartbeat = BeatAsync(module, claimed.Id, cancel, heartbeatStop.Token);
-        var cancelWatch = WatchForCancelAsync(module, claimed.Id, cancel, heartbeatStop.Token);
+        var heartbeat = BeatAsync(module, claimed.Id, claimed.Attempts, cancel, heartbeatStop.Token);
+        var cancelWatch = WatchForCancelAsync(module, claimed.Id, claimed.Attempts, cancel, heartbeatStop.Token);
         try
         {
             if (!module.Kinds.TryGetValue(claimed.Kind, out var kind))
@@ -130,11 +130,11 @@ public sealed partial class JobRunner
         }
         catch (OperationCanceledException) when (stopping.IsCancellationRequested)
         {
-            await _transport.RequeueAsync(module, claimed.Id, CancellationToken.None).ConfigureAwait(false);
+            await _transport.RequeueAsync(module, claimed.Id, claimed.Attempts, CancellationToken.None).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancel.IsCancellationRequested)
         {
-            await _transport.MarkCanceledAsync(module, claimed.Id, CancellationToken.None).ConfigureAwait(false);
+            await _transport.MarkCanceledAsync(module, claimed.Id, claimed.Attempts, CancellationToken.None).ConfigureAwait(false);
         }
         catch (JobNoLongerRunningException exception)
         {
@@ -149,7 +149,7 @@ public sealed partial class JobRunner
                 LogJobFailed(_logger, exception, module.Name, claimed.Id, claimed.Kind, claimed.Attempts);
             }
 
-            await _transport.RetryOrFailAsync(module, claimed.Id, error, retry ? RetryDelay(exception, claimed.Attempts) : null, CancellationToken.None).ConfigureAwait(false);
+            await _transport.RetryOrFailAsync(module, claimed.Id, claimed.Attempts, error, retry ? RetryDelay(exception, claimed.Attempts) : null, CancellationToken.None).ConfigureAwait(false);
         }
         finally
         {
@@ -224,7 +224,7 @@ public sealed partial class JobRunner
 
         async Task<BatchStep<TCheckpoint>> SaveAsync(BatchStep<TCheckpoint> next, CancellationToken token)
         {
-            await writer.SaveCheckpointAsync(context.JobsModule, context.JobId, JsonSerializer.Serialize(next.Checkpoint, JobQueue.Json), next.Progress, token).ConfigureAwait(false);
+            await context.SaveCheckpointAsync(writer, JsonSerializer.Serialize(next.Checkpoint, JobQueue.Json), next.Progress, token).ConfigureAwait(false);
             await publisher.PublishTrackedAsync(token).ConfigureAwait(false);
             if (next.Done)
             {
@@ -264,7 +264,7 @@ public sealed partial class JobRunner
     private static Task HandleEventAsync<TEvent>(object handler, object payload, CancellationToken cancellationToken) =>
         ((IEventHandler<TEvent>)handler).HandleAsync((TEvent)payload, cancellationToken);
 
-    private async Task BeatAsync(JobsModule module, Guid id, CancellationTokenSource cancel, CancellationToken stop)
+    private async Task BeatAsync(JobsModule module, Guid id, int attempt, CancellationTokenSource cancel, CancellationToken stop)
     {
         using var timer = new PeriodicTimer(_options.HeartbeatInterval, _time);
         try
@@ -273,7 +273,7 @@ public sealed partial class JobRunner
             {
                 try
                 {
-                    if (await _transport.HeartbeatAsync(module, id, stop).ConfigureAwait(false))
+                    if (await _transport.HeartbeatAsync(module, id, attempt, stop).ConfigureAwait(false))
                     {
                         await cancel.CancelAsync().ConfigureAwait(false);
                     }
@@ -289,7 +289,7 @@ public sealed partial class JobRunner
         }
     }
 
-    private async Task WatchForCancelAsync(JobsModule module, Guid id, CancellationTokenSource cancel, CancellationToken stop)
+    private async Task WatchForCancelAsync(JobsModule module, Guid id, int attempt, CancellationTokenSource cancel, CancellationToken stop)
     {
         using var timer = new PeriodicTimer(_options.CancelCheckInterval, _time);
         try
@@ -298,7 +298,7 @@ public sealed partial class JobRunner
             {
                 try
                 {
-                    if (await _transport.IsCancelRequestedAsync(module, id, stop).ConfigureAwait(false))
+                    if (await _transport.IsCancelRequestedAsync(module, id, attempt, stop).ConfigureAwait(false))
                     {
                         await cancel.CancelAsync().ConfigureAwait(false);
                         return;

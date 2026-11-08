@@ -88,7 +88,7 @@ public sealed class DedupeTests
         await using var app = await PostgresServer.CreateAppAsync();
         var (transport, orders, running, newer) = await RunningWithANewerTwinAsync(app);
 
-        await transport.RetryOrFailAsync(orders, running.Id, Failure, TimeSpan.Zero, TestContext.Current.CancellationToken);
+        await transport.RetryOrFailAsync(orders, running.Id, running.Attempts, Failure, TimeSpan.Zero, TestContext.Current.CancellationToken);
 
         var old = (await JobAsync(app, "Orders", running.Id))!;
         Assert.Equal((JobStatus.Canceled, "/problems/jobs/superseded"), (old.Status, old.LastError!.Type));
@@ -101,7 +101,7 @@ public sealed class DedupeTests
         await using var app = await PostgresServer.CreateAppAsync();
         var (transport, orders, running, newer) = await RunningWithANewerTwinAsync(app);
 
-        await transport.RequeueAsync(orders, running.Id, TestContext.Current.CancellationToken);
+        await transport.RequeueAsync(orders, running.Id, running.Attempts, TestContext.Current.CancellationToken);
 
         Assert.Equal(JobStatus.Canceled, (await JobAsync(app, "Orders", running.Id))!.Status);
         Assert.Equal(JobStatus.Queued, (await JobAsync(app, "Orders", newer.Id))!.Status);
@@ -141,6 +141,65 @@ public sealed class DedupeTests
 
         Assert.Contains("ix_jobs_claim_queued", plan, StringComparison.Ordinal);
         Assert.DoesNotContain("Sort", plan, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AStaleRunCannotWriteOntoARowAnotherWorkerReclaimed()
+    {
+        await using var app = await PostgresServer.CreateAppAsync();
+        var token = TestContext.Current.CancellationToken;
+        await EnqueueAsync(app, new FlakyCommand(0), new JobOptions());
+        var transport = app.GetRequiredService<IJobTransport>();
+        var orders = Registry(app).Find("Orders")!;
+        var stale = (await transport.ClaimAsync(orders, JobOptions.DefaultLane, token))!;
+        await ScalarAsync(app, "UPDATE orders.jobs SET heartbeat_at = now() - interval '3 minutes'");
+        await transport.SweepStaleAsync(orders, TimeSpan.FromMinutes(2), token);
+        var reclaimed = (await transport.ClaimAsync(orders, JobOptions.DefaultLane, token))!;
+        await using var scope = app.CreateAsyncScope();
+        var writer = scope.ServiceProvider.GetRequiredService<IJobWriter>();
+
+        Assert.False(await transport.HeartbeatAsync(orders, stale.Id, stale.Attempts, token));
+        await transport.RetryOrFailAsync(orders, stale.Id, stale.Attempts, new JobError("/problems/late", "Late.", null), null, token);
+        await transport.MarkCanceledAsync(orders, stale.Id, stale.Attempts, token);
+        await transport.RequeueAsync(orders, stale.Id, stale.Attempts, token);
+        Assert.False(await writer.SaveCheckpointAsync(orders, stale.Id, stale.Attempts, "{}", null, token));
+
+        var job = (await JobAsync(app, "Orders", reclaimed.Id))!;
+        Assert.Equal(JobStatus.Running, job.Status);
+        Assert.Equal(2, job.Attempts);
+        Assert.Null(job.LastError);
+    }
+
+    [Fact(Timeout = 60_000)]
+    public async Task ARequeueWaitsForTheDedupeLockAndThenSeesTheTwin()
+    {
+        await using var app = await PostgresServer.CreateAppAsync();
+        var token = TestContext.Current.CancellationToken;
+        var (transport, orders, running, newer) = await RunningWithANewerTwinAsync(app);
+        await using var holder = await app.GetRequiredService<NpgsqlDataSource>().OpenConnectionAsync(token);
+        await using (var hold = new NpgsqlCommand("SELECT pg_advisory_lock(hashtextextended(@key, 0))", holder))
+        {
+            hold.Parameters.AddWithValue("key", PostgreSql.JobsTable.DedupeLockKey(orders, running.Kind, "rebuild"));
+            await hold.ExecuteNonQueryAsync(token);
+        }
+
+        var requeue = transport.RequeueAsync(orders, running.Id, running.Attempts, token);
+        var polls = 0;
+        while (!Equals(await ScalarAsync(app, WaitingOnAdvisoryLock), 1L))
+        {
+            Assert.True(++polls <= 2000, "The requeue never blocked on the dedupe lock.");
+            await Task.Delay(10, token);
+        }
+
+        await using (var release = new NpgsqlCommand("SELECT pg_advisory_unlock_all()", holder))
+        {
+            await release.ExecuteNonQueryAsync(token);
+        }
+
+        await requeue;
+
+        Assert.Equal(JobStatus.Canceled, (await JobAsync(app, "Orders", running.Id))!.Status);
+        Assert.Equal(JobStatus.Queued, (await JobAsync(app, "Orders", newer.Id))!.Status);
     }
 
     private const string WaitingOnAdvisoryLock =

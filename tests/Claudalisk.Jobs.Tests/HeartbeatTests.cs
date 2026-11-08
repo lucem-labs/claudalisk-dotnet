@@ -15,7 +15,7 @@ public sealed class HeartbeatTests
 
         public TaskCompletionSource SecondBeat { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        public async Task<bool> HeartbeatAsync(JobsModule module, Guid id, CancellationToken cancellationToken)
+        public async Task<bool> HeartbeatAsync(JobsModule module, Guid id, int attempt, CancellationToken cancellationToken)
         {
             switch (Interlocked.Increment(ref _beats))
             {
@@ -23,11 +23,11 @@ public sealed class HeartbeatTests
                     FirstBeat.SetResult();
                     throw new InvalidOperationException("The connection dropped during the first heartbeat.");
                 case 2:
-                    var result = await inner.HeartbeatAsync(module, id, cancellationToken);
+                    var result = await inner.HeartbeatAsync(module, id, attempt, cancellationToken);
                     SecondBeat.SetResult();
                     return result;
                 default:
-                    return await inner.HeartbeatAsync(module, id, cancellationToken);
+                    return await inner.HeartbeatAsync(module, id, attempt, cancellationToken);
             }
         }
 
@@ -39,20 +39,20 @@ public sealed class HeartbeatTests
         public Task WaitForWorkAsync(JobsModule module, string lane, TimeSpan timeout, CancellationToken cancellationToken) =>
             inner.WaitForWorkAsync(module, lane, timeout, cancellationToken);
 
-        public Task<bool> IsCancelRequestedAsync(JobsModule module, Guid id, CancellationToken cancellationToken) =>
-            inner.IsCancelRequestedAsync(module, id, cancellationToken);
+        public Task<bool> IsCancelRequestedAsync(JobsModule module, Guid id, int attempt, CancellationToken cancellationToken) =>
+            inner.IsCancelRequestedAsync(module, id, attempt, cancellationToken);
 
-        public Task ReportProgressAsync(JobsModule module, Guid id, double fraction, string? step, CancellationToken cancellationToken) =>
-            inner.ReportProgressAsync(module, id, fraction, step, cancellationToken);
+        public Task ReportProgressAsync(JobsModule module, Guid id, int attempt, double fraction, string? step, CancellationToken cancellationToken) =>
+            inner.ReportProgressAsync(module, id, attempt, fraction, step, cancellationToken);
 
-        public Task RetryOrFailAsync(JobsModule module, Guid id, JobError error, TimeSpan? retryAfter, CancellationToken cancellationToken) =>
-            inner.RetryOrFailAsync(module, id, error, retryAfter, cancellationToken);
+        public Task RetryOrFailAsync(JobsModule module, Guid id, int attempt, JobError error, TimeSpan? retryAfter, CancellationToken cancellationToken) =>
+            inner.RetryOrFailAsync(module, id, attempt, error, retryAfter, cancellationToken);
 
-        public Task MarkCanceledAsync(JobsModule module, Guid id, CancellationToken cancellationToken) =>
-            inner.MarkCanceledAsync(module, id, cancellationToken);
+        public Task MarkCanceledAsync(JobsModule module, Guid id, int attempt, CancellationToken cancellationToken) =>
+            inner.MarkCanceledAsync(module, id, attempt, cancellationToken);
 
-        public Task RequeueAsync(JobsModule module, Guid id, CancellationToken cancellationToken) =>
-            inner.RequeueAsync(module, id, cancellationToken);
+        public Task RequeueAsync(JobsModule module, Guid id, int attempt, CancellationToken cancellationToken) =>
+            inner.RequeueAsync(module, id, attempt, cancellationToken);
 
         public Task<JobRecord?> GetAsync(JobsModule module, Guid id, CancellationToken cancellationToken) =>
             inner.GetAsync(module, id, cancellationToken);

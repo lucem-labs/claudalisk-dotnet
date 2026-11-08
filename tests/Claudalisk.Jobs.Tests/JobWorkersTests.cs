@@ -44,21 +44,21 @@ public sealed class JobWorkersTests
         public Task WaitForWorkAsync(JobsModule module, string lane, TimeSpan timeout, CancellationToken cancellationToken) =>
             throw new ObjectDisposedException(nameof(FailingTransport));
 
-        public Task<bool> HeartbeatAsync(JobsModule module, Guid id, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<bool> HeartbeatAsync(JobsModule module, Guid id, int attempt, CancellationToken cancellationToken) => throw new NotSupportedException();
 
-        public Task ReportProgressAsync(JobsModule module, Guid id, double fraction, string? step, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task ReportProgressAsync(JobsModule module, Guid id, int attempt, double fraction, string? step, CancellationToken cancellationToken) => throw new NotSupportedException();
 
-        public Task RetryOrFailAsync(JobsModule module, Guid id, JobError error, TimeSpan? retryAfter, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task RetryOrFailAsync(JobsModule module, Guid id, int attempt, JobError error, TimeSpan? retryAfter, CancellationToken cancellationToken) => throw new NotSupportedException();
 
-        public Task MarkCanceledAsync(JobsModule module, Guid id, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task MarkCanceledAsync(JobsModule module, Guid id, int attempt, CancellationToken cancellationToken) => throw new NotSupportedException();
 
-        public Task RequeueAsync(JobsModule module, Guid id, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task RequeueAsync(JobsModule module, Guid id, int attempt, CancellationToken cancellationToken) => throw new NotSupportedException();
 
         public Task<JobRecord?> GetAsync(JobsModule module, Guid id, CancellationToken cancellationToken) => throw new NotSupportedException();
 
         public Task<JobRecord?> RequestCancelAsync(JobsModule module, Guid id, CancellationToken cancellationToken) => throw new NotSupportedException();
 
-        public Task<bool> IsCancelRequestedAsync(JobsModule module, Guid id, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<bool> IsCancelRequestedAsync(JobsModule module, Guid id, int attempt, CancellationToken cancellationToken) => throw new NotSupportedException();
 
         public Task<JobHistoryPage> ListAsync(JobsModule module, JobHistoryQuery query, CancellationToken cancellationToken) => throw new NotSupportedException();
 
@@ -86,21 +86,21 @@ public sealed class JobWorkersTests
 
         public Task WaitForWorkAsync(JobsModule module, string lane, TimeSpan timeout, CancellationToken cancellationToken) => throw new NotSupportedException();
 
-        public Task<bool> HeartbeatAsync(JobsModule module, Guid id, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<bool> HeartbeatAsync(JobsModule module, Guid id, int attempt, CancellationToken cancellationToken) => throw new NotSupportedException();
 
-        public Task ReportProgressAsync(JobsModule module, Guid id, double fraction, string? step, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task ReportProgressAsync(JobsModule module, Guid id, int attempt, double fraction, string? step, CancellationToken cancellationToken) => throw new NotSupportedException();
 
-        public Task RetryOrFailAsync(JobsModule module, Guid id, JobError error, TimeSpan? retryAfter, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task RetryOrFailAsync(JobsModule module, Guid id, int attempt, JobError error, TimeSpan? retryAfter, CancellationToken cancellationToken) => throw new NotSupportedException();
 
-        public Task MarkCanceledAsync(JobsModule module, Guid id, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task MarkCanceledAsync(JobsModule module, Guid id, int attempt, CancellationToken cancellationToken) => throw new NotSupportedException();
 
-        public Task RequeueAsync(JobsModule module, Guid id, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task RequeueAsync(JobsModule module, Guid id, int attempt, CancellationToken cancellationToken) => throw new NotSupportedException();
 
         public Task<JobRecord?> GetAsync(JobsModule module, Guid id, CancellationToken cancellationToken) => throw new NotSupportedException();
 
         public Task<JobRecord?> RequestCancelAsync(JobsModule module, Guid id, CancellationToken cancellationToken) => throw new NotSupportedException();
 
-        public Task<bool> IsCancelRequestedAsync(JobsModule module, Guid id, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<bool> IsCancelRequestedAsync(JobsModule module, Guid id, int attempt, CancellationToken cancellationToken) => throw new NotSupportedException();
 
         public Task<JobHistoryPage> ListAsync(JobsModule module, JobHistoryQuery query, CancellationToken cancellationToken) => throw new NotSupportedException();
 
