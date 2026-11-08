@@ -26,11 +26,19 @@ public sealed record StrictCommand(string Reference);
 
 public sealed record RefusedCommand(string Reference);
 
+public sealed record LimitedCommand(int Limit);
+
 public sealed record StaleCommand(string Reference);
 
 public sealed record OutageCommand(int WaitMinutes);
 
 public sealed class OrderRefused() : DomainException("order-refused", "The order is refused.", DomainErrorKind.Conflict);
+
+public sealed class OrderLimitReached(int limit) : DomainException(
+    "order-limit-reached",
+    "The order limit is reached.",
+    DomainErrorKind.Conflict,
+    new Dictionary<string, object?> { ["limit"] = limit, ["region"] = "eu" });
 
 public sealed record WaitCommand(Guid Key, double Progress);
 
@@ -211,6 +219,11 @@ internal sealed class StrictHandler : IHandler<StrictCommand, int>
     public Task<int> HandleAsync(StrictCommand message, CancellationToken cancellationToken) => Task.FromResult(1);
 }
 
+internal sealed class LimitedHandler : IHandler<LimitedCommand, int>
+{
+    public Task<int> HandleAsync(LimitedCommand message, CancellationToken cancellationToken) => throw new OrderLimitReached(message.Limit);
+}
+
 internal sealed class RefusedHandler : IHandler<RefusedCommand, int>
 {
     public Task<int> HandleAsync(RefusedCommand message, CancellationToken cancellationToken) => throw new OrderRefused();
@@ -374,6 +387,7 @@ public sealed class OrdersModule : IModule
             .Command<FlakyCommand>("flaky")
             .Command<StrictCommand>("strict")
             .Command<RefusedCommand>("refused")
+            .Command<LimitedCommand>("limited")
             .Command<StaleCommand>("stale")
             .Command<OutageCommand>("outage")
             .Command<WaitCommand>("wait")

@@ -8,7 +8,7 @@ namespace Claudalisk.Jobs;
 
 public sealed record JobProgressResponse(double? Fraction, string? Step);
 
-public sealed record JobErrorResponse(string Type, string Title, string? Detail);
+public sealed record JobErrorResponse(string Type, string Title, string? Detail, IReadOnlyDictionary<string, object?>? Extensions = null);
 
 public sealed record JobResponse(
     Guid Id,
@@ -77,7 +77,7 @@ public static class JobsRouter
             job.Attempts,
             job.MaxAttempts,
             new JobProgressResponse(job.ProgressFraction, job.ProgressStep),
-            job.LastError is { } error ? new JobErrorResponse(error.Type, error.Title, error.Detail) : null,
+            job.LastError is { } error ? new JobErrorResponse(error.Type, error.Title, error.Detail, error.Extensions) : null,
             job.CreatedAt,
             job.StartedAt,
             job.FinishedAt,

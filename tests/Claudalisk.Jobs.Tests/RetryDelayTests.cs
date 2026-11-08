@@ -12,7 +12,7 @@ public sealed class RetryDelayTests
     {
         var options = new JobsOptions { RetryBaseDelay = TimeSpan.Zero };
         configure(options);
-        return new JobRunner(null!, null!, new JobsRegistry(), Options.Create(options), NullLogger<JobRunner>.Instance, TimeProvider.System);
+        return new JobRunner(null!, null!, new JobsRegistry(), Options.Create(options), NullLogger<JobRunner>.Instance, TimeProvider.System, null);
     }
 
     [Fact]

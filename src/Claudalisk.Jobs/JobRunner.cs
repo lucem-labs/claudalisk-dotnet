@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using Claudalisk.Dispatching;
 using Claudalisk.Domain;
+using Claudalisk.Modules;
 using Claudalisk.Persistence;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -22,9 +23,11 @@ public sealed partial class JobRunner
     private readonly JobsOptions _options;
     private readonly ILogger<JobRunner> _logger;
     private readonly TimeProvider _time;
+    private readonly ModuleCatalog? _catalog;
 
     internal JobRunner(
-        IServiceScopeFactory scopes, IJobTransport transport, JobsRegistry registry, IOptions<JobsOptions> options, ILogger<JobRunner> logger, TimeProvider time)
+        IServiceScopeFactory scopes, IJobTransport transport, JobsRegistry registry, IOptions<JobsOptions> options, ILogger<JobRunner> logger, TimeProvider time,
+        ModuleCatalog? catalog)
     {
         _scopes = scopes;
         _transport = transport;
@@ -32,6 +35,7 @@ public sealed partial class JobRunner
         _options = options.Value;
         _logger = logger;
         _time = time;
+        _catalog = catalog;
     }
 
     public async Task<int> RunUntilIdleAsync(string module, string lane = JobOptions.DefaultLane, CancellationToken cancellationToken = default)
@@ -124,7 +128,7 @@ public sealed partial class JobRunner
         }
         catch (Exception exception)
         {
-            var error = ErrorFor(module, exception);
+            var error = ErrorFor(exception, _catalog);
             var retry = exception is not (MessageValidationException or DomainException or StaleVersionException) && claimed.Attempts < claimed.MaxAttempts;
             if (error.Type == UnexpectedError)
             {
@@ -299,9 +303,9 @@ public sealed partial class JobRunner
 
     private const string UnexpectedError = "/problems/jobs/failed";
 
-    internal static JobError ErrorFor(JobsModule module, Exception exception) => exception switch
+    internal static JobError ErrorFor(Exception exception, ModuleCatalog? catalog) => exception switch
     {
-        DomainException domain => new JobError($"/problems/{Claudalisk.AspNetCore.NameSegments.Kebab(module.Name)}/{domain.Slug}", domain.Title, domain.Title),
+        DomainException domain => new JobError(Claudalisk.AspNetCore.ProblemTypes.For(domain, catalog), domain.Title, domain.Title, domain.Extensions.Count == 0 ? null : domain.Extensions),
         MessageValidationException validation => new JobError("/problems/jobs/invalid", "The job's input is not valid.", validation.Message),
         StaleVersionException => new JobError("/problems/precondition-failed", "The resource changed since the job read it.", null),
         DependencyUnavailableException => new JobError("/problems/dependency-unavailable", "A service this job needs is unavailable.", null),

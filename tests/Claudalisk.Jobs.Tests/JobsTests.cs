@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Claudalisk.Dispatching;
 using Claudalisk.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -160,6 +161,29 @@ public sealed class JobsTests
         var failed = (await JobAsync(app, "Orders", job.Id))!;
         Assert.Equal((JobStatus.Failed, 1, "/problems/orders/order-refused", "The order is refused."),
             (failed.Status, failed.Attempts, failed.LastError!.Type, failed.LastError.Title));
+    }
+
+    [Fact]
+    public async Task ADomainErrorsExtensionsAreStoredWithTheJobsErrorAndShownByTheRouter()
+    {
+        await using var app = await PostgresServer.CreateAppAsync();
+        var job = await EnqueueAsync(app, new LimitedCommand(5));
+
+        Assert.Equal(1, await Runner(app).RunUntilIdleAsync("Orders", cancellationToken: TestContext.Current.CancellationToken));
+
+        var failed = (await JobAsync(app, "Orders", job.Id))!;
+        var extensions = failed.LastError!.Extensions!;
+        Assert.Equal((5, "eu"), (((JsonElement)extensions["limit"]!).GetInt32(), ((JsonElement)extensions["region"]!).GetString()));
+        var shown = JobsRouter.Represent(Registry(app).Find("Orders")!, failed).Error!;
+        Assert.Equal(extensions.Keys.Order(), shown.Extensions!.Keys.Order());
+    }
+
+    [Fact]
+    public void ADomainErrorFromAnotherModuleGetsThatModulesProblemType()
+    {
+        var error = JobRunner.ErrorFor(new Modules.Billing.RefundDenied(), null);
+
+        Assert.Equal("/problems/billing/refund-denied", error.Type);
     }
 
     [Fact]

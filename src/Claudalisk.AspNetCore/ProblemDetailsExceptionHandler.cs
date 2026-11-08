@@ -100,7 +100,6 @@ internal sealed partial class ProblemDetailsExceptionHandler(
 
     private static ProblemDetails DomainProblem(DomainException exception, ModuleCatalog? catalog)
     {
-        var module = ModuleNames.ModuleOf(exception.GetType(), catalog);
         var problem = new ProblemDetails
         {
             Status = exception.Kind switch
@@ -109,7 +108,7 @@ internal sealed partial class ProblemDetailsExceptionHandler(
                 DomainErrorKind.Forbidden => StatusCodes.Status403Forbidden,
                 _ => StatusCodes.Status409Conflict,
             },
-            Type = module is null ? $"/problems/{exception.Slug}" : $"/problems/{ModuleNames.Kebab(module)}/{exception.Slug}",
+            Type = ProblemTypes.For(exception, catalog),
             Title = exception.Title,
             Detail = exception.Title,
         };

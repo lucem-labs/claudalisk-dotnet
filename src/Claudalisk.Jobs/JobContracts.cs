@@ -14,7 +14,7 @@ public sealed record JobOptions(string Lane = JobOptions.DefaultLane, string? De
     public const string DefaultLane = "default";
 }
 
-public sealed record JobError(string Type, string Title, string? Detail);
+public sealed record JobError(string Type, string Title, string? Detail, IReadOnlyDictionary<string, object?>? Extensions = null);
 
 public sealed record JobRecord(
     Guid Id,

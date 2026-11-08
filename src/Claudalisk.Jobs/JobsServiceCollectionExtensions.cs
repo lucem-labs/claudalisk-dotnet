@@ -1,4 +1,5 @@
 using Claudalisk.Dispatching;
+using Claudalisk.Modules;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -55,7 +56,8 @@ public static class JobsServiceCollectionExtensions
             provider.GetRequiredService<JobsRegistry>(),
             provider.GetRequiredService<IOptions<JobsOptions>>(),
             provider.GetRequiredService<ILogger<JobRunner>>(),
-            provider.GetService<TimeProvider>() ?? TimeProvider.System));
+            provider.GetService<TimeProvider>() ?? TimeProvider.System,
+            provider.GetService<ModuleCatalog>()));
         services.AddHostedService<JobWorkers>();
         return services;
     }
