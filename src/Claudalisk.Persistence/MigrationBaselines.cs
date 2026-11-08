@@ -73,12 +73,13 @@ public sealed partial class MigrationBaselines(IServiceProvider services)
 
             if (applied.Contains(baseline.Migration, StringComparer.Ordinal))
             {
-                var leftovers = applied.Intersect(baseline.Replaces, StringComparer.Ordinal).ToArray();
-                if (leftovers.Length > 0)
+                var replaced = applied.Intersect(baseline.Replaces, StringComparer.Ordinal).ToArray();
+                var stray = UnknownMigrations(baseline, applied);
+                if (replaced.Length > 0 || stray.Length > 0)
                 {
                     throw new MigrationBaselineException(
-                        $"Schema {baseline.Schema} records the baseline {baseline.Migration} and still records migrations it replaces, so nothing was changed. "
-                        + $"Replaced: {List(leftovers)}. Remove them from the history by hand once the schema is known to match the baseline.");
+                        $"Schema {baseline.Schema} records the baseline {baseline.Migration} next to migrations it should not, so nothing was changed. "
+                        + $"Replaced: {List(replaced)}. Unknown: {List(stray)}. Remove them from the history by hand once the schema is known to match the baseline.");
                 }
 
                 continue;
@@ -98,6 +99,21 @@ public sealed partial class MigrationBaselines(IServiceProvider services)
         }
 
         return adopt;
+    }
+
+    private string[] UnknownMigrations(MigrationBaseline baseline, List<string> applied)
+    {
+        var registration = services.GetServices<ModuleDbContextRegistration>().FirstOrDefault(candidate => candidate.Schema == baseline.Schema);
+        if (registration is null)
+        {
+            return [];
+        }
+
+        var context = (DbContext)services.GetRequiredService(registration.ContextType);
+        var known = context.GetService<IMigrationsAssembly>().Migrations.Keys;
+        return applied
+            .Where(id => id != baseline.Migration && !baseline.Replaces.Contains(id, StringComparer.Ordinal) && !known.Contains(id, StringComparer.Ordinal))
+            .ToArray();
     }
 
     private DbContext HistoryContext(string schema) =>

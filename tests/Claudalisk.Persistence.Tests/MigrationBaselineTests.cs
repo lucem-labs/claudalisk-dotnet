@@ -185,13 +185,14 @@ public sealed class MigrationBaselineTests
     }
 
     [Fact]
-    public async Task AMigrationAddedAfterTheBaselineDoesNotRefuseARecordedBaseline()
+    public async Task ARecordedBaselineNextToAMigrationItsContextDoesNotKnowIsRefused()
     {
-        var database = await TransitionalDatabaseAsync([Baseline, "20261201000000_Later"]);
+        var database = await TransitionalDatabaseAsync([Baseline, "20261201000000_Stray"]);
 
-        await MigrateWithBaselineAsync(database);
+        var refused = await Assert.ThrowsAsync<MigrationBaselineException>(() => MigrateWithBaselineAsync(database));
 
-        Assert.Equal([Baseline, "20261201000000_Later"], await HistoryAsync(database, OrdersDbContext.Schema));
+        Assert.Contains("Unknown: 20261201000000_Stray", refused.Message);
+        Assert.Equal([Baseline, "20261201000000_Stray"], await HistoryAsync(database, OrdersDbContext.Schema));
     }
 
     [Fact]
