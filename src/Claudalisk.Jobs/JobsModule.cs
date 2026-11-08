@@ -43,6 +43,8 @@ public sealed partial class JobsModule
 
     public TimeSpan? Retention { get; private set; }
 
+    internal bool LibraryOwned { get; set; }
+
     public IReadOnlyDictionary<string, JobKind> Kinds => _kinds;
 
     public JobKind? KindFor(Type payloadType) =>
@@ -94,6 +96,12 @@ public sealed class ModuleJobsBuilder
     public JobsModule Module { get; }
 
     internal JobsRegistry Registry { get; }
+
+    internal ModuleJobsBuilder LibraryOwned()
+    {
+        Module.LibraryOwned = true;
+        return this;
+    }
 
     public ModuleJobsBuilder Lane(string lane, int workers)
     {

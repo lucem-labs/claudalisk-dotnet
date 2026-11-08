@@ -58,6 +58,7 @@ public static class JobsServiceCollectionExtensions
             provider.GetRequiredService<ILogger<JobRunner>>(),
             provider.GetService<TimeProvider>() ?? TimeProvider.System,
             provider.GetService<ModuleCatalog>()));
+        services.AddHostedService<JobsModulesCheck>();
         services.AddHostedService<JobWorkers>();
         return services;
     }

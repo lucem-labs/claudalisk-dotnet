@@ -8,6 +8,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Claudalisk.Jobs.Tests" />
     <InternalsVisibleTo Include="Claudalisk.Jobs.PostgreSql" />
+    <InternalsVisibleTo Include="Claudalisk.Scheduling" />
     <ProjectReference Include="..\Claudalisk.AspNetCore\Claudalisk.AspNetCore.csproj" />
     <ProjectReference Include="..\Claudalisk.Dispatching\Claudalisk.Dispatching.csproj" />
     <ProjectReference Include="..\Claudalisk.Domain\Claudalisk.Domain.csproj" />
