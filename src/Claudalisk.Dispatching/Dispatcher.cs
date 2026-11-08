@@ -148,19 +148,16 @@ internal sealed partial class Dispatcher : IDispatcher
 
     private void Exit(SendFrame frame)
     {
-        frame.Exited = true;
-        while (ReferenceEquals(Volatile.Read(ref _current), frame))
+        frame.MarkExited();
+        while (Volatile.Read(ref _current) is { Exited: true } dead)
         {
-            var target = frame.Parent;
+            var target = dead.Parent;
             while (target is { Exited: true })
             {
                 target = target.Parent;
             }
 
-            if (ReferenceEquals(Interlocked.CompareExchange(ref _current, target, frame), frame))
-            {
-                break;
-            }
+            Interlocked.CompareExchange(ref _current, target, dead);
         }
 
         Ambient.Value = frame.Previous;
@@ -212,7 +209,7 @@ internal sealed partial class Dispatcher : IDispatcher
 
     private sealed class SendFrame(Dispatcher owner, SendFrame? parent, SendFrame? previous, bool hasLiveAmbient)
     {
-        private volatile bool _exited;
+        private int _exited;
 
         public Dispatcher Owner { get; } = owner;
 
@@ -222,10 +219,8 @@ internal sealed partial class Dispatcher : IDispatcher
 
         public bool IsTopLevel { get; } = !hasLiveAmbient;
 
-        public bool Exited
-        {
-            get => _exited;
-            set => _exited = value;
-        }
+        public bool Exited => Volatile.Read(ref _exited) == 1;
+
+        public void MarkExited() => Interlocked.Exchange(ref _exited, 1);
     }
 }
