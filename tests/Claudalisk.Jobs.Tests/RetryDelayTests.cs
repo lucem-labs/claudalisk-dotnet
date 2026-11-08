@@ -65,7 +65,6 @@ public sealed class RetryDelayTests
 
     [Theory]
     [InlineData(nameof(JobsOptions.HeartbeatInterval))]
-    [InlineData(nameof(JobsOptions.PollInterval))]
     [InlineData(nameof(JobsOptions.StaleAfter))]
     [InlineData(nameof(JobsOptions.RetryMaxDelay))]
     public void EveryJobsIntervalMustBePositive(string name)
@@ -79,6 +78,34 @@ public sealed class RetryDelayTests
         var failure = Assert.Throws<OptionsValidationException>(() => provider.GetRequiredService<IOptions<JobsOptions>>().Value);
 
         Assert.Contains(name, failure.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-5)]
+    public void ThePollIntervalMustBePositiveOrInfinite(int seconds)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddDispatching();
+        services.AddJobs(options => options.PollInterval = TimeSpan.FromSeconds(seconds));
+        using var provider = services.BuildServiceProvider();
+
+        var failure = Assert.Throws<OptionsValidationException>(() => provider.GetRequiredService<IOptions<JobsOptions>>().Value);
+
+        Assert.Contains("PollInterval", failure.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AnInfinitePollIntervalIsValid()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddDispatching();
+        services.AddJobs(options => options.PollInterval = Timeout.InfiniteTimeSpan);
+        using var provider = services.BuildServiceProvider();
+
+        Assert.Equal(Timeout.InfiniteTimeSpan, provider.GetRequiredService<IOptions<JobsOptions>>().Value.PollInterval);
     }
 
     [Fact]
