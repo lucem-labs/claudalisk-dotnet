@@ -12,9 +12,9 @@ internal sealed class DbSession(NpgsqlDataSource dataSource) : IScopeConnection,
 
     public List<DbContext> EnlistedContexts { get; } = [];
 
-    public void ReleaseEnlistedContexts()
+    public Exception? ReleaseEnlistedContexts(NpgsqlTransaction transaction)
     {
-        var transaction = Transaction;
+        Exception? failure = null;
         foreach (var context in EnlistedContexts)
         {
             try
@@ -27,9 +27,14 @@ internal sealed class DbSession(NpgsqlDataSource dataSource) : IScopeConnection,
             catch (ObjectDisposedException)
             {
             }
+            catch (Exception exception)
+            {
+                failure ??= exception;
+            }
         }
 
         EnlistedContexts.Clear();
+        return failure;
     }
 
     public void Dispose() => Connection.Dispose();

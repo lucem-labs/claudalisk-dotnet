@@ -1,4 +1,5 @@
 using System.Data;
+using System.Runtime.ExceptionServices;
 
 namespace Claudalisk.Persistence;
 
@@ -19,16 +20,22 @@ internal sealed class UnitOfWork(DbSession session) : IUnitOfWork
 
         await using var transaction = await session.Connection.BeginTransactionAsync(cancellationToken);
         session.Transaction = transaction;
+        var completed = false;
         try
         {
             var result = await work(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
+            completed = true;
             return result;
         }
         finally
         {
-            session.ReleaseEnlistedContexts();
             session.Transaction = null;
+            var failure = session.ReleaseEnlistedContexts(transaction);
+            if (failure is not null && completed)
+            {
+                ExceptionDispatchInfo.Capture(failure).Throw();
+            }
         }
     }
 }

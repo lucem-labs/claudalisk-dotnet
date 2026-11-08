@@ -74,6 +74,6 @@ public sealed partial class MigrationHistoryMoves(IServiceProvider services)
             ? $"\"{schema}\""
             : throw new ArgumentException($"A schema is a lower-case identifier; got '{schema}'.", nameof(schema));
 
-    [GeneratedRegex("^[a-z_][a-z0-9_]*$")]
+    [GeneratedRegex(@"^[a-z_][a-z0-9_]*\z")]
     private static partial Regex SchemaPattern();
 }

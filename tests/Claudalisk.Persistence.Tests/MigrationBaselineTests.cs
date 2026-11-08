@@ -124,10 +124,13 @@ public sealed class MigrationBaselineTests
         }
 
         var adopting = MigrateWithBaselineAsync(database);
-        while (await ScalarLongAsync(database, "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND wait_event = 'advisory'") == 0)
+        const string waiting = "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND NOT granted AND database = (SELECT oid FROM pg_database WHERE datname = current_database())";
+        var attempts = 0;
+        while (await ScalarLongAsync(database, waiting) == 0)
         {
             Assert.False(adopting.IsCompleted, "Adoption finished without waiting for the lock.");
-            await Task.Yield();
+            Assert.True(++attempts < 3000, "Adoption never waited for the lock.");
+            await Task.Delay(10, TestContext.Current.CancellationToken);
         }
 
         foreach (var migration in Replaced)
@@ -204,9 +207,17 @@ public sealed class MigrationBaselineTests
         await ExecuteAsync(database, $"CREATE SCHEMA orders; CREATE TABLE orders.orders (id uuid PRIMARY KEY); CREATE ROLE {role} LOGIN PASSWORD 'pw'; GRANT CONNECT ON DATABASE \"{name}\" TO {role}; GRANT USAGE, CREATE ON SCHEMA orders TO {role}");
         var limited = new NpgsqlConnectionStringBuilder(database) { Username = role, Password = "pw" }.ConnectionString;
 
-        var refused = await Assert.ThrowsAsync<MigrationBaselineException>(() => MigrateWithBaselineAsync(limited));
+        try
+        {
+            var refused = await Assert.ThrowsAsync<MigrationBaselineException>(() => MigrateWithBaselineAsync(limited));
 
-        Assert.Contains("has tables but no migration history", refused.Message);
+            Assert.Contains("has tables but no migration history", refused.Message);
+        }
+        finally
+        {
+            NpgsqlConnection.ClearAllPools();
+            await ExecuteAsync(database, $"DROP OWNED BY {role}; DROP ROLE {role}");
+        }
     }
 
     [Fact]
@@ -220,8 +231,17 @@ public sealed class MigrationBaselineTests
     }
 
     [Theory]
+    [InlineData(null)]
+    [InlineData(" ")]
+    public void ABaselineRejectsABlankReplacedMigration(string? blank)
+    {
+        Assert.ThrowsAny<ArgumentException>(() => new ServiceCollection().AddMigrationBaseline("orders", Baseline, [Replaced[0], blank!]));
+    }
+
+    [Theory]
     [InlineData("Orders")]
     [InlineData("or ders")]
+    [InlineData("orders\n")]
     [InlineData("orders\"; DROP SCHEMA x")]
     public void ABaselineSchemaMustBeALowerCaseIdentifier(string schema)
     {

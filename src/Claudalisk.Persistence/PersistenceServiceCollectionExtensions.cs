@@ -52,6 +52,11 @@ public static class PersistenceServiceCollectionExtensions
             throw new ArgumentException("A baseline replaces at least one migration.", nameof(replaces));
         }
 
+        foreach (var replaced in replaces)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(replaced, nameof(replaces));
+        }
+
         if (replaces.Distinct(StringComparer.Ordinal).Count() != replaces.Count)
         {
             throw new ArgumentException("A baseline lists each migration it replaces once.", nameof(replaces));
