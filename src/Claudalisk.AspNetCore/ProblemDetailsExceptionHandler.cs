@@ -116,7 +116,8 @@ internal sealed partial class ProblemDetailsExceptionHandler(
                 _ => StatusCodes.Status409Conflict,
             },
             Type = ProblemTypes.For(exception, catalog),
-            Title = exception.Title,
+            Title = Summary(exception.Slug),
+            Detail = exception.Message,
         };
         foreach (var (key, value) in exception.Extensions)
         {
@@ -124,6 +125,12 @@ internal sealed partial class ProblemDetailsExceptionHandler(
         }
 
         return problem;
+    }
+
+    internal static string Summary(string slug)
+    {
+        var words = slug.Replace('-', ' ');
+        return string.Concat(char.ToUpperInvariant(words[0]).ToString(), words[1..]);
     }
 
     internal static string RetryAfterSeconds(TimeSpan wait) =>

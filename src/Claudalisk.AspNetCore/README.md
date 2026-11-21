@@ -17,6 +17,10 @@ What every Host needs: one Problem Details handler, conditional writes, HAL memb
 | `BadHttpRequestException` | its own status | none |
 | anything else | 500 | none |
 
+A `DomainException` problem's `title` is its slug as words, such as `Already shipped` for `already-shipped`, so it stays the same for every occurrence. Its `detail` is the exception's message.
+
+The handler only writes a body for an exception. A response that already has a problem body, such as `Results.ValidationProblem` or `ValidationProblem(ModelState)` from a controller, keeps it, `errors` included.
+
 ## Stale writes and lost races
 
 - A write that carries `If-Match` loads the aggregate and calls `AggregateRoot.RequireVersion` with that version. A mismatch throws `StaleVersionException` and the response is 412. The client reads the resource again. The dispatcher never retries it.

@@ -14,9 +14,9 @@ namespace Claudalisk.AspNetCore.Tests;
 public sealed class ProblemDetailsTests
 {
     [Theory]
-    [InlineData("conflict", HttpStatusCode.Conflict, "/problems/order-booking/already-shipped", "The order has already shipped.")]
-    [InlineData("not-found", HttpStatusCode.NotFound, "/problems/order-booking/order-not-found", "No such order.")]
-    [InlineData("forbidden", HttpStatusCode.Forbidden, "/problems/order-booking/not-your-order", "This order belongs to someone else.")]
+    [InlineData("conflict", HttpStatusCode.Conflict, "/problems/order-booking/already-shipped", "Already shipped")]
+    [InlineData("not-found", HttpStatusCode.NotFound, "/problems/order-booking/order-not-found", "Order not found")]
+    [InlineData("forbidden", HttpStatusCode.Forbidden, "/problems/order-booking/not-your-order", "Not your order")]
     public async Task ADomainErrorBecomesItsKindsStatusWithAModuleType(string kind, HttpStatusCode status, string type, string title)
     {
         await using var app = await TestApp.StartAsync();
@@ -40,14 +40,40 @@ public sealed class ProblemDetailsTests
         Assert.Equal(3, body.GetProperty("shipped").GetInt32());
     }
 
-    [Fact]
-    public async Task ADomainErrorHasNoDetailThatRepeatsItsTitle()
+    [Theory]
+    [InlineData("conflict", "The order has already shipped.")]
+    [InlineData("not-found", "No such order.")]
+    [InlineData("forbidden", "This order belongs to someone else.")]
+    public async Task ADomainErrorsMessageReachesDetail(string kind, string detail)
     {
         await using var app = await TestApp.StartAsync();
 
-        var (_, body) = await PostAsync(app, "/api/orders/fail/conflict");
+        var (_, body) = await PostAsync(app, $"/api/orders/fail/{kind}");
 
-        Assert.False(body.TryGetProperty("detail", out _));
+        Assert.Equal(detail, body.GetProperty("detail").GetString());
+    }
+
+    [Fact]
+    public async Task AValidationProblemFromAControllerKeepsItsErrors()
+    {
+        await using var app = await TestApp.StartAsync();
+
+        var (response, body) = await PostAsync(app, "/api/orders/validation-problem");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal("Quantity must be positive.", body.GetProperty("errors").GetProperty("quantity")[0].GetString());
+    }
+
+    [Fact]
+    public async Task AModelStateValidationProblemFromAControllerKeepsItsErrors()
+    {
+        await using var app = await TestApp.StartAsync();
+
+        var (response, body) = await PostAsync(app, "/api/orders/model-state-problem");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("Quantity must be positive.", body.GetProperty("errors").GetProperty("quantity")[0].GetString());
     }
 
     [Theory]
