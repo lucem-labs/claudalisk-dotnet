@@ -14,6 +14,20 @@
       "claudalisk.modules": {
         "type": "Project"
       }
+    },
+    "net11.0": {
+      "FluentValidation": {
+        "type": "Direct",
+        "requested": "[12.2.0, )",
+        "resolved": "12.2.0",
+        "contentHash": "DR3lFbdnKucaaj1/8zMNOACMz/64igzox1yVZSFVsLxYB5mxAB+wFP1WZ8fjwrZnbU1KA1DoMzHKYKxUfuZ4wQ=="
+      },
+      "claudalisk.dispatching.abstractions": {
+        "type": "Project"
+      },
+      "claudalisk.modules": {
+        "type": "Project"
+      }
     }
   }
 }

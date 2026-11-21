@@ -3,6 +3,11 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.OpenApi;
 using Microsoft.Extensions.Options;
 using Microsoft.OpenApi;
+#if NET11_0_OR_GREATER
+using MediaTypes = System.Collections.Generic.Dictionary<string, Microsoft.OpenApi.IOpenApiMediaType>;
+#else
+using MediaTypes = System.Collections.Generic.Dictionary<string, Microsoft.OpenApi.OpenApiMediaType>;
+#endif
 
 namespace Claudalisk.AspNetCore;
 
@@ -34,7 +39,7 @@ internal sealed class ProblemResponses(IOptions<ClaudaliskWebOptions> options) :
             operation.Responses[key] = new OpenApiResponse
             {
                 Description = $"{description} Problem type: {ProblemTypes.Resolve(type, options.Value.ProblemTypeBase)}",
-                Content = new Dictionary<string, OpenApiMediaType> { [MediaType] = new OpenApiMediaType { Schema = schema } },
+                Content = new MediaTypes { [MediaType] = new OpenApiMediaType { Schema = schema } },
             };
         }
     }
