@@ -20,7 +20,7 @@ An event is a class that implements the marker interface `IDomainEvent`. An aggr
 Derive from `DomainException` for a rule that a request broke. The constructor takes:
 
 - `slug`: lower-case words joined by hyphens, such as `already-shipped`. It becomes the end of the problem type.
-- `title`: the message, which cannot be blank.
+- `title`: the message, which cannot be blank. The web package sends it as the problem's `detail`.
 - `kind`: `DomainErrorKind.Conflict`, `NotFound` or `Forbidden`, which the web package maps to 409, 404 and 403.
 - `extensions`: optional members for the response body.
 - `innerException`: optional.

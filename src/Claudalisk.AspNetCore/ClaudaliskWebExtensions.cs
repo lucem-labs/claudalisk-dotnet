@@ -26,6 +26,7 @@ public static class ClaudaliskWebExtensions
             .ValidateOnStart();
         services.ConfigureHttpJsonOptions(options => options.SerializerOptions.NumberHandling = JsonNumberHandling.Strict);
         services.Configure<Microsoft.AspNetCore.Mvc.JsonOptions>(options => options.JsonSerializerOptions.NumberHandling = JsonNumberHandling.Strict);
+        services.Insert(0, ServiceDescriptor.Singleton<Microsoft.AspNetCore.Http.IProblemDetailsWriter, ValidationProblemWriter>());
         services.AddProblemDetails();
         services.AddExceptionHandler<ProblemDetailsExceptionHandler>();
         services.TryAddSingleton<ModuleTags>();

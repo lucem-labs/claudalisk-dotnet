@@ -5,6 +5,7 @@ using Claudalisk.Modules;
 using Claudalisk.Persistence;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
@@ -63,6 +64,17 @@ public sealed class OrdersController : ControllerBase
     [HttpPost("{id:guid}/contest")]
     public async Task<IActionResult> Contest(Guid id, [FromServices] IDispatcher dispatcher, CancellationToken cancellationToken) =>
         Ok(new { version = await dispatcher.SendAsync<long>(new ContestOrderCommand(id), cancellationToken) });
+
+    [HttpPost("validation-problem")]
+    public IResult ValidationProblemResult() =>
+        Results.ValidationProblem(new Dictionary<string, string[]> { ["quantity"] = ["Quantity must be positive."] }, instance: Request.Path);
+
+    [HttpPost("model-state-problem")]
+    public IActionResult ModelStateProblem()
+    {
+        ModelState.AddModelError("quantity", "Quantity must be positive.");
+        return ValidationProblem(ModelState);
+    }
 
     [HttpPost("fail/{kind}")]
     public IActionResult Fail(string kind) => kind switch
