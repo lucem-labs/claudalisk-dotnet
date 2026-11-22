@@ -46,6 +46,25 @@ public sealed class PersistenceSetupTests
     }
 
     [Fact]
+    public async Task TheInitializerListsEveryModuleMigrationInRegistrationOrderWhetherAppliedOrNot()
+    {
+        await using var app = await PostgresServer.CreateEmptyAppAsync();
+        await using var scope = app.CreateAsyncScope();
+        var initializer = scope.ServiceProvider.GetRequiredService<DatabaseInitializer>();
+        ModuleMigration[] expected =
+        [
+            new(OrdersDbContext.Schema, "20261026000000_InitialOrders"),
+            new(BillingDbContext.Schema, "20261026000000_InitialBilling"),
+        ];
+
+        Assert.Equal(expected, initializer.GetMigrations());
+
+        await initializer.MigrateAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(expected, initializer.GetMigrations());
+    }
+
+    [Fact]
     public void RegisteringAModuleContextTwiceRegistersItOnce()
     {
         var services = new ServiceCollection()

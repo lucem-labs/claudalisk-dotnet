@@ -30,7 +30,7 @@ Both refusals throw `InvalidOperationException` with a message that says what to
 
 ## Migrations
 
-`DatabaseInitializer.MigrateAsync` moves migration histories, adopts baselines, then migrates each context in registration order. `GetPendingMigrationsAsync` lists what is pending as `schema: migration`.
+`DatabaseInitializer.MigrateAsync` moves migration histories, adopts baselines, then migrates each context in registration order. `GetPendingMigrationsAsync` lists what is pending as `schema: migration`. `GetMigrations` lists every migration of every context, applied or not, as `ModuleMigration(Schema, Id)` in registration order, so a host can print them without touching EF Core types.
 
 Call `MigrateAsync` outside a unit of work. Migrations manage their own transactions, so inside `RunAsync` it throws `InvalidOperationException`.
 
