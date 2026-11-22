@@ -123,14 +123,18 @@ public sealed class RetryDelayTests
     }
 
     [Fact]
-    public void InvalidJobsOptionsFailTheStartupValidation()
+    public async Task InvalidJobsOptionsFailTheStartupValidation()
     {
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddClaudaliskDispatching();
         services.AddClaudaliskJobs(options => options.PollInterval = TimeSpan.Zero);
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
 
+#if NET11_0_OR_GREATER
+        await Assert.ThrowsAsync<OptionsValidationException>(async () => await provider.GetRequiredService<IAsyncStartupValidator>().ValidateAsync(TestContext.Current.CancellationToken));
+#else
         Assert.Throws<OptionsValidationException>(() => provider.GetRequiredService<IStartupValidator>().Validate());
+#endif
     }
 }

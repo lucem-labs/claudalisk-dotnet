@@ -16,12 +16,23 @@ public sealed class StartupTests
     private static ServiceProvider Build(TestSettings settings, params TestSchedule[] schedules) =>
         TestApp.Services(Connection, new FakeTimeProvider(TestApp.Start), new Refreshes(), settings, schedules).BuildServiceProvider();
 
-    [Fact]
-    public void AnInvalidScheduleFailsStartupEvenWhenTheSchedulerIsDisabled()
+#if NET11_0_OR_GREATER
+    private static async Task ValidateStartupAsync(ServiceProvider app) =>
+        await app.GetRequiredService<IAsyncStartupValidator>().ValidateAsync(TestContext.Current.CancellationToken);
+#else
+    private static Task ValidateStartupAsync(ServiceProvider app)
     {
-        using var app = Build(new TestSettings(Enabled: false), new TestSchedule("bad-cron", "every hour"));
+        app.GetRequiredService<IStartupValidator>().Validate();
+        return Task.CompletedTask;
+    }
+#endif
 
-        var failure = Assert.Throws<OptionsValidationException>(() => app.GetRequiredService<IStartupValidator>().Validate());
+    [Fact]
+    public async Task AnInvalidScheduleFailsStartupEvenWhenTheSchedulerIsDisabled()
+    {
+        await using var app = Build(new TestSettings(Enabled: false), new TestSchedule("bad-cron", "every hour"));
+
+        var failure = await Assert.ThrowsAsync<OptionsValidationException>(() => ValidateStartupAsync(app));
 
         Assert.Contains("'bad-cron' has an invalid cron expression", failure.Message, StringComparison.Ordinal);
     }
@@ -29,32 +40,32 @@ public sealed class StartupTests
     [Theory]
     [InlineData("00:00:00")]
     [InlineData("-00:00:05")]
-    public void ATickIntervalThatIsNotPositiveFailsStartup(string tickInterval)
+    public async Task ATickIntervalThatIsNotPositiveFailsStartup(string tickInterval)
     {
-        using var app = Build(new TestSettings(TickInterval: tickInterval));
+        await using var app = Build(new TestSettings(TickInterval: tickInterval));
 
-        var failure = Assert.Throws<OptionsValidationException>(() => app.GetRequiredService<IStartupValidator>().Validate());
+        var failure = await Assert.ThrowsAsync<OptionsValidationException>(() => ValidateStartupAsync(app));
 
         Assert.Contains("TickInterval must be positive", failure.Message, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void ValidSchedulesPassStartupValidation()
+    public async Task ValidSchedulesPassStartupValidation()
     {
-        using var app = Build(new TestSettings(), new TestSchedule("hourly-refresh", "0 * * * *"));
+        await using var app = Build(new TestSettings(), new TestSchedule("hourly-refresh", "0 * * * *"));
 
-        app.GetRequiredService<IStartupValidator>().Validate();
+        await ValidateStartupAsync(app);
     }
 
     [Fact]
-    public void AddingTheSchedulerTwiceKeepsOneCopyOfEverySchedule()
+    public async Task AddingTheSchedulerTwiceKeepsOneCopyOfEverySchedule()
     {
         var services = TestApp.Services(Connection, new FakeTimeProvider(TestApp.Start), new Refreshes(), new TestSettings(), new TestSchedule("hourly-refresh", "0 * * * *"));
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Scheduling:Schedules:0:Name"] = "hourly-refresh" }).Build();
         services.AddClaudaliskScheduling(configuration);
-        using var app = services.BuildServiceProvider();
+        await using var app = services.BuildServiceProvider();
 
-        app.GetRequiredService<IStartupValidator>().Validate();
+        await ValidateStartupAsync(app);
 
         Assert.Equal(["hourly-refresh"], app.GetRequiredService<Scheduler>().Schedules);
     }

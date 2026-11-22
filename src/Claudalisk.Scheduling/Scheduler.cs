@@ -66,7 +66,7 @@ public sealed partial class Scheduler
             var scope = _scopes.CreateAsyncScope();
             await using var scopeDisposal = scope.ConfigureAwait(false);
             var db = scope.ServiceProvider.GetRequiredService<SchedulingDbContext>();
-            var removed = await db.Database.ExecuteSqlInterpolatedAsync($"DELETE FROM scheduling.schedules WHERE name <> ALL({names})", cancellationToken).ConfigureAwait(false);
+            var removed = await db.Database.ExecuteSqlAsync($"DELETE FROM scheduling.schedules WHERE name <> ALL({names})", cancellationToken).ConfigureAwait(false);
             _pruned = true;
             if (removed > 0)
             {
@@ -88,7 +88,7 @@ public sealed partial class Scheduler
         var jobs = _jobs.Find(SchedulingJobs.Name) ?? throw new InvalidOperationException("The scheduler's jobs module is not registered. Call AddClaudaliskScheduling.");
         return await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().RunAsync<DateTimeOffset?>(async token =>
         {
-            await db.Database.ExecuteSqlInterpolatedAsync(
+            await db.Database.ExecuteSqlAsync(
                 $"INSERT INTO scheduling.schedules (name, last_fired_timestamp) VALUES ({schedule.Name}, NULL) ON CONFLICT (name) DO NOTHING", token).ConfigureAwait(false);
             var rows = await db.Database
                 .SqlQuery<DateTimeOffset?>($"SELECT last_fired_timestamp AS \"Value\" FROM scheduling.schedules WHERE name = {schedule.Name} FOR UPDATE")
@@ -113,7 +113,7 @@ public sealed partial class Scheduler
     }
 
     private static Task<int> SetLastFiredAsync(SchedulingDbContext db, Schedule schedule, DateTimeOffset at, CancellationToken cancellationToken) =>
-        db.Database.ExecuteSqlInterpolatedAsync($"UPDATE scheduling.schedules SET last_fired_timestamp = {at} WHERE name = {schedule.Name}", cancellationToken);
+        db.Database.ExecuteSqlAsync($"UPDATE scheduling.schedules SET last_fired_timestamp = {at} WHERE name = {schedule.Name}", cancellationToken);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Schedule {Schedule} queued {Command} for {Module} for {Occurrence}")]
     private static partial void LogQueued(ILogger logger, string schedule, string command, string module, DateTimeOffset occurrence);

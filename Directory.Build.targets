@@ -1,6 +1,6 @@
 <Project>
   <ItemGroup>
-    <PackageSourceFile Include="@(Compile)" Exclude="$(BaseIntermediateOutputPath)**;$(BaseOutputPath)**" />
+    <PackageSourceFile Include="$(MSBuildProjectDirectory)/**/*.cs" Exclude="$(MSBuildProjectDirectory)/$(BaseIntermediateOutputPath)**;$(MSBuildProjectDirectory)/$(BaseOutputPath)**" />
   </ItemGroup>
 
   <PropertyGroup Condition="'$(IsPackable)' == 'true' And Exists('$(MSBuildProjectDirectory)/README.md')">

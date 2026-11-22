@@ -87,7 +87,7 @@ internal sealed class BillingStore(BillingDbContext db)
     }
 
     public Task EnqueueReceiptAsync(Guid orderId, CancellationToken cancellationToken) =>
-        db.Database.ExecuteSqlInterpolatedAsync($"INSERT INTO billing.jobs (kind, order_id) VALUES ('receipt', {orderId})", cancellationToken);
+        db.Database.ExecuteSqlAsync($"INSERT INTO billing.jobs (kind, order_id) VALUES ('receipt', {orderId})", cancellationToken);
 
     public Task<int> CountChargesAsync(CancellationToken cancellationToken) => db.Charges.CountAsync(cancellationToken);
 
