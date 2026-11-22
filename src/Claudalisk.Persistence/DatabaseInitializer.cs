@@ -23,6 +23,12 @@ public sealed class DatabaseInitializer(IServiceProvider services, IEnumerable<M
         }
     }
 
+    public IReadOnlyList<ModuleMigration> GetMigrations() =>
+        Contexts
+            .SelectMany(registration => Context(registration).Database.GetMigrations()
+                .Select(migration => new ModuleMigration(registration.Schema, migration)))
+            .ToArray();
+
     public async Task<IReadOnlyList<string>> GetPendingMigrationsAsync(CancellationToken cancellationToken = default)
     {
         var pending = new List<string>();
