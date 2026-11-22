@@ -50,6 +50,12 @@ jobs:
       - name: Refuse a tag that is not on main
         run: node scripts/require-on-main.mjs "$GITHUB_SHA"
 
+      - name: Baseline from the last release
+        run: node scripts/baseline-version.mjs --before "$GITHUB_REF_NAME"
+
+      - name: Refuse a version that is too low
+        run: node scripts/require-release-bump.mjs "$GITHUB_REF_NAME" "$CLAUDALISK_BASELINE_VERSION"
+
       - name: Restore
         run: dotnet restore Claudalisk.Dotnet.slnx --locked-mode
 
