@@ -16,6 +16,10 @@
     <EnablePackageValidation>true</EnablePackageValidation>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(IsPackable)' == 'true' And '$(CLAUDALISK_BASELINE_VERSION)' != '' And $([System.String]::Copy(';$(CLAUDALISK_BASELINE_PACKAGES);').Contains(';$(PackageId);'))">
+    <PackageValidationBaselineVersion>$(CLAUDALISK_BASELINE_VERSION)</PackageValidationBaselineVersion>
+  </PropertyGroup>
+
   <ItemGroup Condition="'$(IsPackable)' == 'true'">
     <None Include="$(MSBuildThisFileDirectory)assets/icon.png" Pack="true" PackagePath="/" Visible="false" />
   </ItemGroup>
