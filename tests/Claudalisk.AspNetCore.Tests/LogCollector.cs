@@ -4,12 +4,31 @@ namespace Claudalisk.AspNetCore.Tests;
 
 internal sealed class LogCollector : ILoggerProvider
 {
-    public List<(string Category, LogLevel Level, bool HasException)> Entries { get; } = [];
+    private readonly List<(string Category, LogLevel Level, bool HasException)> entries = [];
+
+    public IReadOnlyList<(string Category, LogLevel Level, bool HasException)> Entries
+    {
+        get
+        {
+            lock (entries)
+            {
+                return [.. entries];
+            }
+        }
+    }
 
     public ILogger CreateLogger(string categoryName) => new Collector(this, categoryName);
 
     public void Dispose()
     {
+    }
+
+    private void Add((string Category, LogLevel Level, bool HasException) entry)
+    {
+        lock (entries)
+        {
+            entries.Add(entry);
+        }
     }
 
     private sealed class Collector(LogCollector owner, string category) : ILogger
@@ -21,10 +40,7 @@ internal sealed class LogCollector : ILoggerProvider
 
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
         {
-            lock (owner.Entries)
-            {
-                owner.Entries.Add((category, logLevel, exception is not null));
-            }
+            owner.Add((category, logLevel, exception is not null));
         }
     }
 }
