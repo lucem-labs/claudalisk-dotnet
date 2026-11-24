@@ -168,7 +168,7 @@ public sealed class OutboxTests
 
     private static async Task<IReadOnlyList<(string Kind, string Status, string? DedupeKey, string Payload)>> JobsAsync(IServiceProvider app)
     {
-        await using var command = app.GetRequiredService<NpgsqlDataSource>().CreateCommand("SELECT kind, status, dedupe_key, payload::text FROM scheduling.jobs ORDER BY created_at, id");
+        await using var command = app.GetRequiredService<NpgsqlDataSource>().CreateCommand("SELECT kind, status, dedupe_key, payload::text FROM scheduling.jobs ORDER BY created_timestamp, id");
         await using var reader = await command.ExecuteReaderAsync(TestContext.Current.CancellationToken);
         var jobs = new List<(string, string, string?, string)>();
         while (await reader.ReadAsync(TestContext.Current.CancellationToken))

@@ -29,8 +29,35 @@ The schema must be a lower-case identifier (letters, digits and underscores, not
 - `CreateRunningIndexSql` / `DropRunningIndexSql`: add it in every module schema, because the stale sweep searches running rows for old heartbeats
 - `CreateClaimIndexSql` / `DropClaimIndexSql`: replaces the claim index with a partial one that matches the claim order
 - `CreateDedupeIndexSql` / `DropDedupeIndexSql`
+- `RenameColumnsSql` / `RestoreColumnsSql`: renames six columns so they carry the mark of their type
 
-`DropDedupeIndexSql` does not restore the queued duplicates that `CreateDedupeIndexSql` canceled. The `Claudalisk.Jobs` README explains delivery, retries, deduplication and lanes.
+`DropDedupeIndexSql` does not restore the queued duplicates that `CreateDedupeIndexSql` canceled.
+
+### Column names
+
+From 0.1.0-alpha.5 the transport reads and writes these names, so every jobs table needs `RenameColumnsSql` before the app runs on that version:
+
+| `CreateSql` creates | `RenameColumnsSql` renames it to |
+| --- | --- |
+| `not_before` | `not_before_timestamp` |
+| `created_at` | `created_timestamp` |
+| `started_at` | `started_timestamp` |
+| `heartbeat_at` | `heartbeat_timestamp` |
+| `finished_at` | `finished_timestamp` |
+| `cancel_requested` | `is_cancel_requested` |
+
+An app adds one migration for each schema that has a jobs table:
+
+```csharp
+protected override void Up(MigrationBuilder migrationBuilder) => migrationBuilder.Sql(JobsTable.RenameColumnsSql("ordering"));
+
+protected override void Down(MigrationBuilder migrationBuilder) => migrationBuilder.Sql(JobsTable.RestoreColumnsSql("ordering"));
+```
+
+- A rename keeps the rows, and PostgreSQL updates the indexes to follow the columns.
+- A new app calls `RenameColumnsSql` right after `CreateSql`, in the same migration.
+- The index helpers work on either set of names, so they may come before or after the rename.
+- The names of `JobRecord` and of the JSON the jobs router returns do not change. The `Claudalisk.Jobs` README explains delivery, retries, deduplication and lanes.
 
 ## Limits
 

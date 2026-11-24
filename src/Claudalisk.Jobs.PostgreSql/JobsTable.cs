@@ -41,42 +41,44 @@ public static partial class JobsTable
     public static string DropSql(string schema) => $"DROP TABLE {Quote(schema)}.jobs;";
 
     public static string CreatePruneIndexSql(string schema) =>
-        $"CREATE INDEX ix_jobs_finished ON {Quote(schema)}.jobs (finished_at) WHERE status IN ('succeeded', 'failed', 'canceled');";
+        ForEitherColumnNames(schema, columns =>
+            $"CREATE INDEX ix_jobs_finished ON {Quote(schema)}.jobs ({columns.Finished}) WHERE status IN ('succeeded', 'failed', 'canceled');");
 
     public static string DropPruneIndexSql(string schema) => $"DROP INDEX {Quote(schema)}.ix_jobs_finished;";
 
     public static string CreateRunningIndexSql(string schema) =>
-        $"CREATE INDEX ix_jobs_running ON {Quote(schema)}.jobs (heartbeat_at) WHERE status = 'running';";
+        ForEitherColumnNames(schema, columns =>
+            $"CREATE INDEX ix_jobs_running ON {Quote(schema)}.jobs ({columns.Heartbeat}) WHERE status = 'running';");
 
     public static string DropRunningIndexSql(string schema) => $"DROP INDEX {Quote(schema)}.ix_jobs_running;";
 
     public static string CreateClaimIndexSql(string schema)
     {
         var s = Quote(schema);
-        return $"""
-            CREATE INDEX ix_jobs_claim_queued ON {s}.jobs (lane, not_before, created_at) WHERE status = 'queued';
+        return ForEitherColumnNames(schema, columns => $"""
+            CREATE INDEX ix_jobs_claim_queued ON {s}.jobs (lane, {columns.NotBefore}, {columns.Created}) WHERE status = 'queued';
             DROP INDEX {s}.ix_jobs_claim;
-            """;
+            """);
     }
 
     public static string DropClaimIndexSql(string schema)
     {
         var s = Quote(schema);
-        return $"""
-            CREATE INDEX ix_jobs_claim ON {s}.jobs (lane, status, not_before);
+        return ForEitherColumnNames(schema, columns => $"""
+            CREATE INDEX ix_jobs_claim ON {s}.jobs (lane, status, {columns.NotBefore});
             DROP INDEX {s}.ix_jobs_claim_queued;
-            """;
+            """);
     }
 
     public static string CreateDedupeIndexSql(string schema)
     {
         var s = Quote(schema);
-        return $"""
+        return ForEitherColumnNames(schema, columns => $"""
             UPDATE {s}.jobs
-            SET status = 'canceled', finished_at = now(), last_error = '{SupersededLiteral}'::jsonb
+            SET status = 'canceled', {columns.Finished} = now(), last_error = '{SupersededLiteral}'::jsonb
             WHERE id IN (
                 SELECT id FROM (
-                    SELECT id, row_number() OVER (PARTITION BY kind, dedupe_key ORDER BY created_at DESC, id DESC) AS rank
+                    SELECT id, row_number() OVER (PARTITION BY kind, dedupe_key ORDER BY {columns.Created} DESC, id DESC) AS rank
                     FROM {s}.jobs
                     WHERE dedupe_key IS NOT NULL AND status = 'queued'
                 ) AS queued
@@ -84,7 +86,7 @@ public static partial class JobsTable
             );
             DROP INDEX {s}.ix_jobs_dedupe;
             CREATE UNIQUE INDEX ux_jobs_dedupe ON {s}.jobs (kind, dedupe_key) WHERE dedupe_key IS NOT NULL AND status = 'queued';
-            """;
+            """);
     }
 
     public static string DropDedupeIndexSql(string schema)
@@ -94,6 +96,40 @@ public static partial class JobsTable
             DROP INDEX {s}.ux_jobs_dedupe;
             CREATE INDEX ix_jobs_dedupe ON {s}.jobs (dedupe_key) WHERE dedupe_key IS NOT NULL AND status = 'queued';
             """;
+    }
+
+    public static string RenameColumnsSql(string schema) => RenameSql(schema, ColumnNames.Original, ColumnNames.Renamed);
+
+    public static string RestoreColumnsSql(string schema) => RenameSql(schema, ColumnNames.Renamed, ColumnNames.Original);
+
+    private static string RenameSql(string schema, ColumnNames from, ColumnNames to)
+    {
+        var s = Quote(schema);
+        return string.Join(' ', from.All.Zip(to.All, (current, renamed) => $"ALTER TABLE {s}.jobs RENAME COLUMN {current} TO {renamed};"));
+    }
+
+    private static string ForEitherColumnNames(string schema, Func<ColumnNames, string> statements) =>
+        $"""
+        DO $jobs$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM pg_attribute
+                WHERE attrelid = '{Quote(schema)}.jobs'::regclass AND attname = '{ColumnNames.Renamed.Created}' AND NOT attisdropped) THEN
+                {statements(ColumnNames.Renamed)}
+            ELSE
+                {statements(ColumnNames.Original)}
+            END IF;
+        END $jobs$;
+        """;
+
+    private sealed record ColumnNames(string NotBefore, string Created, string Started, string Heartbeat, string Finished, string CancelRequested)
+    {
+        public static ColumnNames Original { get; } = new("not_before", "created_at", "started_at", "heartbeat_at", "finished_at", "cancel_requested");
+
+        public static ColumnNames Renamed { get; } = new(
+            "not_before_timestamp", "created_timestamp", "started_timestamp", "heartbeat_timestamp", "finished_timestamp", "is_cancel_requested");
+
+        public string[] All => [NotBefore, Created, Started, Heartbeat, Finished, CancelRequested];
     }
 
     internal static string SupersededJson { get; } =

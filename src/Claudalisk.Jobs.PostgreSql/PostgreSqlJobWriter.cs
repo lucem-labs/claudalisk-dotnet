@@ -40,7 +40,7 @@ internal sealed class PostgreSqlJobWriter(IScopeConnection scope) : IJobWriter
             var supersede = (await CommandAsync(transaction,
                 $"""
                 UPDATE {table}
-                SET status = 'canceled', finished_at = now(),
+                SET status = 'canceled', finished_timestamp = now(),
                     last_error = @superseded::jsonb
                 WHERE kind = @kind AND dedupe_key = @key AND status = 'queued'
                 """, cancellationToken).ConfigureAwait(false));
@@ -53,7 +53,7 @@ internal sealed class PostgreSqlJobWriter(IScopeConnection scope) : IJobWriter
 
         var insert = await CommandAsync(transaction,
             $"""
-            INSERT INTO {table} (id, kind, payload, lane, status, max_attempts, dedupe_key, not_before)
+            INSERT INTO {table} (id, kind, payload, lane, status, max_attempts, dedupe_key, not_before_timestamp)
             VALUES (@id, @kind, @payload::jsonb, @lane, 'queued', @max, @key, coalesce(@notBefore, now()));
             SELECT pg_notify('{JobsTable.Channel(module.Schema)}', @lane);
             """, cancellationToken).ConfigureAwait(false);
@@ -74,7 +74,7 @@ internal sealed class PostgreSqlJobWriter(IScopeConnection scope) : IJobWriter
         var command = (await CommandAsync(
             $"""
             UPDATE {JobsTable.Quote(module.Schema)}.jobs
-            SET status = 'succeeded', finished_at = now(), heartbeat_at = NULL, result_link = @link, progress_fraction = 1
+            SET status = 'succeeded', finished_timestamp = now(), heartbeat_timestamp = NULL, result_link = @link, progress_fraction = 1
             WHERE id = @id AND status = 'running' AND attempts = @attempt
             """, cancellationToken).ConfigureAwait(false));
         await using var commandDisposal = command.ConfigureAwait(false);
@@ -112,7 +112,7 @@ internal sealed class PostgreSqlJobWriter(IScopeConnection scope) : IJobWriter
     public async Task<IReadOnlyList<JobDelivery>> LockActiveAsync(JobsModule module, string kind, CancellationToken cancellationToken)
     {
         var command = (await CommandAsync(
-            $"SELECT id, payload::text FROM {JobsTable.Quote(module.Schema)}.jobs WHERE kind = @kind AND status IN ('queued', 'running') ORDER BY created_at, id FOR UPDATE",
+            $"SELECT id, payload::text FROM {JobsTable.Quote(module.Schema)}.jobs WHERE kind = @kind AND status IN ('queued', 'running') ORDER BY created_timestamp, id FOR UPDATE",
             cancellationToken).ConfigureAwait(false));
         await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("kind", kind);
@@ -138,7 +138,7 @@ internal sealed class PostgreSqlJobWriter(IScopeConnection scope) : IJobWriter
         var command = (await CommandAsync(
             $"""
             UPDATE {JobsTable.Quote(module.Schema)}.jobs
-            SET status = 'succeeded', started_at = coalesce(started_at, now()), finished_at = now(), heartbeat_at = NULL, progress_fraction = 1
+            SET status = 'succeeded', started_timestamp = coalesce(started_timestamp, now()), finished_timestamp = now(), heartbeat_timestamp = NULL, progress_fraction = 1
             WHERE id = ANY(@ids) AND kind = @kind AND status IN ('queued', 'running')
             """, cancellationToken).ConfigureAwait(false));
         await using var commandDisposal = command.ConfigureAwait(false);

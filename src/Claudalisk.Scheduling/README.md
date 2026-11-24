@@ -69,7 +69,9 @@ The jobs workers of the module (default lane, one worker; change it with `AddCla
 An app that runs `DatabaseInitializer.MigrateAsync` gets the Scheduling migrations, in this order:
 
 1. `InitialScheduling`: the `scheduling.schedules` table.
-2. `AddSchedulingJobs`: the `scheduling.jobs` table with `JobsTable.CreateSql`, the prune index and the dedupe index.
+2. `AddSchedulingJobs`: the `scheduling.jobs` table with `JobsTable.CreateSql`, the prune index, the dedupe index and the running index.
 3. `RenameLastFiredAt`: `last_fired_at` becomes `last_fired_timestamp`.
+4. `AddSchedulingJobsClaimIndex`: the partial claim index on queued rows.
+5. `RenameSchedulingJobsColumns`: the columns of `scheduling.jobs` get the names of `JobsTable.RenameColumnsSql`. An app adds nothing for this table.
 
 The package references `Claudalisk.Jobs.PostgreSql` for the table SQL only. An app still chooses its transport through `AddClaudaliskPostgreSqlJobs`.

@@ -252,7 +252,7 @@ public sealed class JobsTests
         Assert.Equal(job.Id, (await transport.ClaimAsync(orders, JobOptions.DefaultLane, TestContext.Current.CancellationToken))!.Id);
         Assert.Null(await transport.ClaimAsync(orders, JobOptions.DefaultLane, TestContext.Current.CancellationToken));
 
-        await ExecuteAsync(app, $"UPDATE orders.jobs SET heartbeat_at = now() - interval '3 minutes' WHERE id = '{job.Id}'");
+        await ExecuteAsync(app, $"UPDATE orders.jobs SET heartbeat_timestamp = now() - interval '3 minutes' WHERE id = '{job.Id}'");
 
         Assert.Null(await transport.ClaimAsync(orders, JobOptions.DefaultLane, TestContext.Current.CancellationToken));
         await transport.SweepStaleAsync(orders, TimeSpan.FromMinutes(2), TestContext.Current.CancellationToken);
@@ -269,7 +269,7 @@ public sealed class JobsTests
         var held = app.GetRequiredService<Signals>().Hold(orderId);
         var running = Runner(app).RunNextAsync("Orders", cancellationToken: TestContext.Current.CancellationToken);
         await held.Started.Task;
-        await ExecuteAsync(app, "UPDATE orders.jobs SET heartbeat_at = now() - interval '3 minutes'");
+        await ExecuteAsync(app, "UPDATE orders.jobs SET heartbeat_timestamp = now() - interval '3 minutes'");
         var transport = app.GetRequiredService<IJobTransport>();
         await transport.SweepStaleAsync(Registry(app).Find("Orders")!, TimeSpan.FromMinutes(2), TestContext.Current.CancellationToken);
         var reclaimed = await transport.ClaimAsync(Registry(app).Find("Orders")!, JobOptions.DefaultLane, TestContext.Current.CancellationToken);
@@ -293,7 +293,7 @@ public sealed class JobsTests
         var orders = Registry(app).Find("Orders")!;
         await transport.ClaimAsync(orders, "slow", TestContext.Current.CancellationToken);
         await transport.ClaimAsync(orders, "slow", TestContext.Current.CancellationToken);
-        await ExecuteAsync(app, "UPDATE orders.jobs SET heartbeat_at = now() - interval '3 minutes', lane = CASE WHEN id = '" + exhausted.Id + "' THEN 'ghost' ELSE lane END");
+        await ExecuteAsync(app, "UPDATE orders.jobs SET heartbeat_timestamp = now() - interval '3 minutes', lane = CASE WHEN id = '" + exhausted.Id + "' THEN 'ghost' ELSE lane END");
 
         await transport.SweepStaleAsync(orders, TimeSpan.FromMinutes(2), TestContext.Current.CancellationToken);
 

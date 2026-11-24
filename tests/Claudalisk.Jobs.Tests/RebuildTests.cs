@@ -18,7 +18,7 @@ public sealed class RebuildTests
         var running = await app.GetRequiredService<IJobTransport>().ClaimAsync(billing, "refunds", TestContext.Current.CancellationToken);
         var unseen = Guid.NewGuid();
         await PublishAsync(app, new OrderCanceled(unseen));
-        await ScalarAsync(app, "UPDATE billing.jobs SET not_before = now() + interval '1 hour' WHERE status = 'queued'");
+        await ScalarAsync(app, "UPDATE billing.jobs SET not_before_timestamp = now() + interval '1 hour' WHERE status = 'queued'");
         var rebuild = await EnqueueAsync(app, new RebuildRefundsCommand(Guid.NewGuid()));
 
         Assert.Equal(1, await Runner(app).RunUntilIdleAsync("Billing", "refunds", TestContext.Current.CancellationToken));
@@ -31,7 +31,7 @@ public sealed class RebuildTests
         Assert.Equal(first, await ScalarAsync(app, $"SELECT (payload->>'orderId')::uuid FROM billing.jobs WHERE id = '{running!.Id}'"));
         Assert.Equal(2L, await ScalarAsync(app, "SELECT count(*) FROM billing.refunds"));
 
-        await ScalarAsync(app, "UPDATE billing.jobs SET not_before = now() WHERE status = 'queued'");
+        await ScalarAsync(app, "UPDATE billing.jobs SET not_before_timestamp = now() WHERE status = 'queued'");
         Assert.Equal(1, await Runner(app).RunUntilIdleAsync("Billing", "refunds", TestContext.Current.CancellationToken));
         Assert.Equal(3L, await ScalarAsync(app, "SELECT count(*) FROM billing.refunds"));
     }
@@ -75,7 +75,7 @@ public sealed class RebuildTests
     {
         await using var app = await PostgresServer.CreateAppAsync();
         var orderId = await CanceledOrderAsync(app);
-        await ScalarAsync(app, "UPDATE billing.jobs SET not_before = now() + interval '1 hour' WHERE status = 'queued'");
+        await ScalarAsync(app, "UPDATE billing.jobs SET not_before_timestamp = now() + interval '1 hour' WHERE status = 'queued'");
         var rebuild = await EnqueueAsync(app, new RebuildRefundsCommand(Guid.NewGuid(), FailAfterRebuild: true), new JobOptions(MaxAttempts: 1));
 
         Assert.Equal(1, await Runner(app).RunUntilIdleAsync("Billing", "refunds", TestContext.Current.CancellationToken));
@@ -162,7 +162,7 @@ public sealed class RebuildTests
     {
         await using var connection = await app.GetRequiredService<NpgsqlDataSource>().OpenConnectionAsync(TestContext.Current.CancellationToken);
         await using var command = new NpgsqlCommand(
-            "SELECT (payload->>'orderId')::uuid, status FROM billing.jobs WHERE kind = 'refund-on-order-canceled' AND lane = 'refunds' ORDER BY created_at, id", connection);
+            "SELECT (payload->>'orderId')::uuid, status FROM billing.jobs WHERE kind = 'refund-on-order-canceled' AND lane = 'refunds' ORDER BY created_timestamp, id", connection);
         await using var reader = await command.ExecuteReaderAsync(TestContext.Current.CancellationToken);
         var deliveries = new List<(Guid, string)>();
         while (await reader.ReadAsync(TestContext.Current.CancellationToken))
