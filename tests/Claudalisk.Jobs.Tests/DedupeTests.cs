@@ -113,7 +113,7 @@ public sealed class DedupeTests
         await using var app = await PostgresServer.CreateAppAsync();
         var (transport, orders, older, newer) = await RunningWithANewerTwinAsync(app);
         var reclaimed = await transport.ClaimAsync(orders, JobOptions.DefaultLane, TestContext.Current.CancellationToken);
-        await ScalarAsync(app, "UPDATE orders.jobs SET heartbeat_at = now() - interval '3 minutes' WHERE status = 'running'");
+        await ScalarAsync(app, "UPDATE orders.jobs SET heartbeat_timestamp = now() - interval '3 minutes' WHERE status = 'running'");
 
         await transport.SweepStaleAsync(orders, TimeSpan.FromMinutes(2), TestContext.Current.CancellationToken);
         var claimed = await transport.ClaimAsync(orders, JobOptions.DefaultLane, TestContext.Current.CancellationToken);
@@ -128,15 +128,15 @@ public sealed class DedupeTests
     {
         await using var app = await PostgresServer.CreateAppAsync();
         await ScalarAsync(app, """
-            INSERT INTO orders.jobs (id, kind, payload, lane, status, max_attempts, not_before)
+            INSERT INTO orders.jobs (id, kind, payload, lane, status, max_attempts, not_before_timestamp)
             SELECT gen_random_uuid(), 'k', '{}'::jsonb, CASE WHEN i % 2 = 0 THEN 'default' ELSE 'slow' END, CASE WHEN i % 10 = 0 THEN 'queued' ELSE 'succeeded' END, 1, now() - i * interval '1 second'
             FROM generate_series(1, 20000) AS i;
             ANALYZE orders.jobs;
             """);
 
         var plan = (string)(await ScalarAsync(app, """
-            EXPLAIN (FORMAT JSON) SELECT id FROM orders.jobs WHERE lane = 'default' AND status = 'queued' AND not_before <= now()
-            ORDER BY not_before, created_at FOR UPDATE SKIP LOCKED LIMIT 1
+            EXPLAIN (FORMAT JSON) SELECT id FROM orders.jobs WHERE lane = 'default' AND status = 'queued' AND not_before_timestamp <= now()
+            ORDER BY not_before_timestamp, created_timestamp FOR UPDATE SKIP LOCKED LIMIT 1
             """))!;
 
         Assert.Contains("ix_jobs_claim_queued", plan, StringComparison.Ordinal);
@@ -152,7 +152,7 @@ public sealed class DedupeTests
         var transport = app.GetRequiredService<IJobTransport>();
         var orders = Registry(app).Find("Orders")!;
         var stale = (await transport.ClaimAsync(orders, JobOptions.DefaultLane, token))!;
-        await ScalarAsync(app, "UPDATE orders.jobs SET heartbeat_at = now() - interval '3 minutes'");
+        await ScalarAsync(app, "UPDATE orders.jobs SET heartbeat_timestamp = now() - interval '3 minutes'");
         await transport.SweepStaleAsync(orders, TimeSpan.FromMinutes(2), token);
         var reclaimed = (await transport.ClaimAsync(orders, JobOptions.DefaultLane, token))!;
         await using var scope = app.CreateAsyncScope();
@@ -266,7 +266,7 @@ public sealed class DedupeTests
         (long)(await ScalarAsync(app, "SELECT count(*) FROM pg_indexes WHERE schemaname = 'billing' AND indexname = 'ix_jobs_dedupe'"))!);
 
     private static string Insert(string name, string createdAt, string kind = "first") =>
-        $"INSERT INTO billing.jobs (id, kind, payload, lane, status, max_attempts, dedupe_key, created_at) VALUES (gen_random_uuid(), '{kind}', '{{\"name\":\"{name}\"}}', 'default', 'queued', 5, 'k', {createdAt});";
+        $"INSERT INTO billing.jobs (id, kind, payload, lane, status, max_attempts, dedupe_key, created_timestamp) VALUES (gen_random_uuid(), '{kind}', '{{\"name\":\"{name}\"}}', 'default', 'queued', 5, 'k', {createdAt});";
 
     private static async Task<List<(string Name, string Status)>> StatusesAsync(IServiceProvider app)
     {

@@ -148,7 +148,7 @@ public sealed class JobHistoryTests
     private static async Task FinishedAgoAsync(IServiceProvider app, string schema, Guid id, int days)
     {
         await using var connection = await app.GetRequiredService<Npgsql.NpgsqlDataSource>().OpenConnectionAsync(TestContext.Current.CancellationToken);
-        await using var command = new Npgsql.NpgsqlCommand($"UPDATE {schema}.jobs SET finished_at = now() - make_interval(days => @days) WHERE id = @id", connection);
+        await using var command = new Npgsql.NpgsqlCommand($"UPDATE {schema}.jobs SET finished_timestamp = now() - make_interval(days => @days) WHERE id = @id", connection);
         command.Parameters.AddWithValue("days", days);
         command.Parameters.AddWithValue("id", id);
         await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);

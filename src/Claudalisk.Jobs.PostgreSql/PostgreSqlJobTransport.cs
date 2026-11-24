@@ -7,7 +7,7 @@ namespace Claudalisk.Jobs.PostgreSql;
 internal sealed class PostgreSqlJobTransport(NpgsqlDataSource dataSource) : IJobTransport
 {
     internal const string Columns =
-        "id, kind, lane, status, attempts, max_attempts, progress_fraction, progress_step, checkpoint::text, result_link, last_error::text, dedupe_key, cancel_requested, created_at, not_before, started_at, heartbeat_at, finished_at";
+        "id, kind, lane, status, attempts, max_attempts, progress_fraction, progress_step, checkpoint::text, result_link, last_error::text, dedupe_key, is_cancel_requested, created_timestamp, not_before_timestamp, started_timestamp, heartbeat_timestamp, finished_timestamp";
 
     public async Task<ClaimedJob?> ClaimAsync(JobsModule module, string lane, CancellationToken cancellationToken)
     {
@@ -19,11 +19,11 @@ internal sealed class PostgreSqlJobTransport(NpgsqlDataSource dataSource) : IJob
         var claim = new NpgsqlCommand(
             $"""
             UPDATE {table} AS job
-            SET status = 'running', attempts = job.attempts + 1, started_at = coalesce(job.started_at, now()), heartbeat_at = now()
+            SET status = 'running', attempts = job.attempts + 1, started_timestamp = coalesce(job.started_timestamp, now()), heartbeat_timestamp = now()
             FROM (
                 SELECT id FROM {table}
-                WHERE lane = @lane AND status = 'queued' AND not_before <= now()
-                ORDER BY not_before, created_at
+                WHERE lane = @lane AND status = 'queued' AND not_before_timestamp <= now()
+                ORDER BY not_before_timestamp, created_timestamp
                 FOR UPDATE SKIP LOCKED
                 LIMIT 1
             ) AS next
@@ -71,7 +71,7 @@ internal sealed class PostgreSqlJobTransport(NpgsqlDataSource dataSource) : IJob
     private static async Task<List<(string Kind, string Key)>> StaleDedupeKeysAsync(NpgsqlConnection connection, JobsModule module, TimeSpan staleAfter, CancellationToken cancellationToken)
     {
         var select = new NpgsqlCommand(
-            $"SELECT DISTINCT kind, dedupe_key FROM {Table(module)} WHERE status = 'running' AND heartbeat_at < now() - @stale AND dedupe_key IS NOT NULL",
+            $"SELECT DISTINCT kind, dedupe_key FROM {Table(module)} WHERE status = 'running' AND heartbeat_timestamp < now() - @stale AND dedupe_key IS NOT NULL",
             connection);
         await using var selectDisposal = select.ConfigureAwait(false);
         select.Parameters.AddWithValue("stale", staleAfter);
@@ -95,9 +95,9 @@ internal sealed class PostgreSqlJobTransport(NpgsqlDataSource dataSource) : IJob
             $"""
             WITH candidates AS (
                 SELECT id, kind, dedupe_key,
-                    row_number() OVER (PARTITION BY kind, dedupe_key ORDER BY created_at DESC, id DESC) AS rank
+                    row_number() OVER (PARTITION BY kind, dedupe_key ORDER BY created_timestamp DESC, id DESC) AS rank
                 FROM {table}
-                WHERE status = 'running' AND heartbeat_at < now() - @stale AND attempts < max_attempts AND dedupe_key IS NOT NULL {candidateFilter}
+                WHERE status = 'running' AND heartbeat_timestamp < now() - @stale AND attempts < max_attempts AND dedupe_key IS NOT NULL {candidateFilter}
             ),
             superseded AS (
                 SELECT candidate.id FROM candidates AS candidate
@@ -109,13 +109,13 @@ internal sealed class PostgreSqlJobTransport(NpgsqlDataSource dataSource) : IJob
                     WHEN job.attempts >= job.max_attempts THEN 'failed'
                     WHEN job.id IN (SELECT id FROM superseded) THEN 'canceled'
                     ELSE 'queued' END,
-                heartbeat_at = NULL,
-                finished_at = CASE WHEN job.attempts >= job.max_attempts OR job.id IN (SELECT id FROM superseded) THEN now() ELSE NULL END,
+                heartbeat_timestamp = NULL,
+                finished_timestamp = CASE WHEN job.attempts >= job.max_attempts OR job.id IN (SELECT id FROM superseded) THEN now() ELSE NULL END,
                 last_error = CASE
                     WHEN job.attempts >= job.max_attempts THEN @staleError::jsonb
                     WHEN job.id IN (SELECT id FROM superseded) THEN @superseded::jsonb
                     ELSE job.last_error END
-            WHERE job.status = 'running' AND job.heartbeat_at < now() - @stale {jobFilter}
+            WHERE job.status = 'running' AND job.heartbeat_timestamp < now() - @stale {jobFilter}
             """, connection, transaction);
         await using var requeueDisposal = requeue.ConfigureAwait(false);
         if (dedupe is { } target)
@@ -158,7 +158,7 @@ internal sealed class PostgreSqlJobTransport(NpgsqlDataSource dataSource) : IJob
     private static async Task<bool> HasQueuedWorkAsync(NpgsqlConnection connection, JobsModule module, string lane, CancellationToken cancellationToken)
     {
         var pending = new NpgsqlCommand(
-            $"SELECT EXISTS (SELECT 1 FROM {JobsTable.Quote(module.Schema)}.jobs WHERE lane = @lane AND status = 'queued' AND not_before <= now())", connection);
+            $"SELECT EXISTS (SELECT 1 FROM {JobsTable.Quote(module.Schema)}.jobs WHERE lane = @lane AND status = 'queued' AND not_before_timestamp <= now())", connection);
         await using var pendingDisposal = pending.ConfigureAwait(false);
         pending.Parameters.AddWithValue("lane", lane);
         return await pending.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is true;
@@ -167,7 +167,7 @@ internal sealed class PostgreSqlJobTransport(NpgsqlDataSource dataSource) : IJob
     public async Task<bool> HeartbeatAsync(JobsModule module, Guid id, int attempt, CancellationToken cancellationToken)
     {
         var command = dataSource.CreateCommand(
-            $"UPDATE {JobsTable.Quote(module.Schema)}.jobs SET heartbeat_at = now() WHERE id = @id AND status = 'running' AND attempts = @attempt RETURNING cancel_requested");
+            $"UPDATE {JobsTable.Quote(module.Schema)}.jobs SET heartbeat_timestamp = now() WHERE id = @id AND status = 'running' AND attempts = @attempt RETURNING is_cancel_requested");
         await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("id", id);
         command.Parameters.AddWithValue("attempt", attempt);
@@ -177,7 +177,7 @@ internal sealed class PostgreSqlJobTransport(NpgsqlDataSource dataSource) : IJob
     public async Task<bool> IsCancelRequestedAsync(JobsModule module, Guid id, int attempt, CancellationToken cancellationToken)
     {
         var command = dataSource.CreateCommand(
-            $"SELECT cancel_requested FROM {JobsTable.Quote(module.Schema)}.jobs WHERE id = @id AND status = 'running' AND attempts = @attempt");
+            $"SELECT is_cancel_requested FROM {JobsTable.Quote(module.Schema)}.jobs WHERE id = @id AND status = 'running' AND attempts = @attempt");
         await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("id", id);
         command.Parameters.AddWithValue("attempt", attempt);
@@ -207,10 +207,10 @@ internal sealed class PostgreSqlJobTransport(NpgsqlDataSource dataSource) : IJob
             $"""
             UPDATE {Table(module)} AS job
             SET last_error = CASE WHEN @retry AND {HasQueuedTwin(module)} THEN @superseded::jsonb ELSE @error::jsonb END,
-                heartbeat_at = NULL,
+                heartbeat_timestamp = NULL,
                 status = CASE WHEN @retry AND {HasQueuedTwin(module)} THEN 'canceled' WHEN @retry THEN 'queued' ELSE 'failed' END,
-                not_before = CASE WHEN @retry THEN now() + @delay ELSE not_before END,
-                finished_at = CASE WHEN @retry AND NOT {HasQueuedTwin(module)} THEN NULL ELSE now() END
+                not_before_timestamp = CASE WHEN @retry THEN now() + @delay ELSE not_before_timestamp END,
+                finished_timestamp = CASE WHEN @retry AND NOT {HasQueuedTwin(module)} THEN NULL ELSE now() END
             WHERE id = @id AND status = 'running' AND attempts = @attempt
             """, connection, transaction);
         await using var commandDisposal = command.ConfigureAwait(false);
@@ -228,7 +228,7 @@ internal sealed class PostgreSqlJobTransport(NpgsqlDataSource dataSource) : IJob
     public async Task MarkCanceledAsync(JobsModule module, Guid id, int attempt, CancellationToken cancellationToken)
     {
         var command = dataSource.CreateCommand(
-            $"UPDATE {JobsTable.Quote(module.Schema)}.jobs SET status = 'canceled', heartbeat_at = NULL, finished_at = now() WHERE id = @id AND status = 'running' AND attempts = @attempt");
+            $"UPDATE {JobsTable.Quote(module.Schema)}.jobs SET status = 'canceled', heartbeat_timestamp = NULL, finished_timestamp = now() WHERE id = @id AND status = 'running' AND attempts = @attempt");
         await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("id", id);
         command.Parameters.AddWithValue("attempt", attempt);
@@ -246,9 +246,9 @@ internal sealed class PostgreSqlJobTransport(NpgsqlDataSource dataSource) : IJob
             $"""
             UPDATE {Table(module)} AS job
             SET status = CASE WHEN {HasQueuedTwin(module)} THEN 'canceled' ELSE 'queued' END,
-                finished_at = CASE WHEN {HasQueuedTwin(module)} THEN now() ELSE NULL END,
+                finished_timestamp = CASE WHEN {HasQueuedTwin(module)} THEN now() ELSE NULL END,
                 last_error = CASE WHEN {HasQueuedTwin(module)} THEN @superseded::jsonb ELSE last_error END,
-                heartbeat_at = NULL,
+                heartbeat_timestamp = NULL,
                 attempts = greatest(attempts - 1, 0)
             WHERE id = @id AND status = 'running' AND attempts = @attempt
             """, connection, transaction);
@@ -285,9 +285,9 @@ internal sealed class PostgreSqlJobTransport(NpgsqlDataSource dataSource) : IJob
         var command = dataSource.CreateCommand(
             $"""
             UPDATE {JobsTable.Quote(module.Schema)}.jobs
-            SET cancel_requested = true,
+            SET is_cancel_requested = true,
                 status = CASE WHEN status = 'queued' THEN 'canceled' ELSE status END,
-                finished_at = CASE WHEN status = 'queued' THEN now() ELSE finished_at END
+                finished_timestamp = CASE WHEN status = 'queued' THEN now() ELSE finished_timestamp END
             WHERE id = @id AND status IN ('queued', 'running')
             RETURNING {Columns}
             """);
@@ -306,7 +306,7 @@ internal sealed class PostgreSqlJobTransport(NpgsqlDataSource dataSource) : IJob
         AddFilter(count, query);
         var total = Convert.ToInt32(await count.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false), System.Globalization.CultureInfo.InvariantCulture);
         var page = new NpgsqlCommand(
-            $"SELECT {Columns}, payload::text {filter} ORDER BY created_at DESC, id DESC OFFSET @offset LIMIT @limit", connection);
+            $"SELECT {Columns}, payload::text {filter} ORDER BY created_timestamp DESC, id DESC OFFSET @offset LIMIT @limit", connection);
         await using var pageDisposal = page.ConfigureAwait(false);
         AddFilter(page, query);
         page.Parameters.AddWithValue("offset", (long)(query.Page - 1) * query.PageSize);
@@ -327,7 +327,7 @@ internal sealed class PostgreSqlJobTransport(NpgsqlDataSource dataSource) : IJob
     public async Task<int> DeleteFinishedBeforeAsync(JobsModule module, TimeSpan retention, CancellationToken cancellationToken)
     {
         var command = dataSource.CreateCommand(
-            $"DELETE FROM {JobsTable.Quote(module.Schema)}.jobs WHERE status IN ('succeeded', 'failed', 'canceled') AND finished_at < now() - @retention");
+            $"DELETE FROM {JobsTable.Quote(module.Schema)}.jobs WHERE status IN ('succeeded', 'failed', 'canceled') AND finished_timestamp < now() - @retention");
         await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("retention", retention);
         return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
